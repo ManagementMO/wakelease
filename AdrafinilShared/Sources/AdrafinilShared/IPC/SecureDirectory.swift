@@ -2,7 +2,14 @@ import Darwin
 import Foundation
 
 public enum LocalIOError: Error, LocalizedError {
-    case unsafePath, unavailable, alreadyRunning, frame, timeout, closed, peer, system(Int32)
+    case unsafePath
+    case unavailable
+    case alreadyRunning
+    case frame
+    case timeout
+    case closed
+    case peer
+    case system(Int32)
 
     public var errorDescription: String? {
         switch self {
@@ -72,7 +79,7 @@ public final class SecureDirectory: @unchecked Sendable {
 
     deinit { Darwin.close(descriptor) }
 
-    public func read(name: String, maximum: Int = 2 * 1024 * 1024) throws -> Data? {
+    public func read(name: String, maximum: Int = 2 * 1_024 * 1_024) throws -> Data? {
         try validateName(name)
         let fd = openat(descriptor, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         if fd < 0, errno == ENOENT { return nil }
@@ -81,7 +88,7 @@ public final class SecureDirectory: @unchecked Sendable {
         var info = stat()
         guard fstat(fd, &info) == 0, safeFile(info), info.st_size >= 0, info.st_size <= maximum else { throw LocalIOError.unsafePath }
         var data = Data()
-        var buffer = [UInt8](repeating: 0, count: 16384)
+        var buffer = [UInt8](repeating: 0, count: 16_384)
         while true {
             let count = Darwin.read(fd, &buffer, buffer.count)
             if count < 0, errno == EINTR { continue }
@@ -127,6 +134,52 @@ public final class SecureDirectory: @unchecked Sendable {
         guard try read(name: name) == expected else { throw LocalIOError.unsafePath }
         try validateExisting(name)
         guard unlinkat(descriptor, name, 0) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func symbolicLinkTarget(name: String) throws -> String? {
+        try validateName(name)
+        var info = stat()
+        if fstatat(descriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+            if errno == ENOENT { return nil }
+            throw LocalIOError.system(errno)
+        }
+        guard info.st_mode & S_IFMT == S_IFLNK, info.st_uid == getuid() else { throw LocalIOError.unsafePath }
+        var bytes = [UInt8](repeating: 0, count: 4_096)
+        let count = readlinkat(descriptor, name, &bytes, bytes.count)
+        guard count > 0, count < bytes.count else { throw LocalIOError.unsafePath }
+        return String(decoding: bytes.prefix(count), as: UTF8.self)
+    }
+
+    public func createSymbolicLink(name: String, target: String) throws {
+        try validateName(name)
+        guard target.hasPrefix("/"), !target.utf8.contains(0) else { throw LocalIOError.unsafePath }
+        guard symlinkat(target, descriptor, name) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func removeSymbolicLink(name: String, target: String) throws {
+        guard try symbolicLinkTarget(name: name) == target else { throw LocalIOError.unsafePath }
+        guard unlinkat(descriptor, name, 0) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func removeSocket(name: String) throws {
+        try validateName(name)
+        var info = stat()
+        if fstatat(descriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+            if errno == ENOENT { return }
+            throw LocalIOError.system(errno)
+        }
+        guard info.st_mode & S_IFMT == S_IFSOCK, info.st_uid == getuid(), unlinkat(descriptor, name, 0) == 0 else { throw LocalIOError.unsafePath }
+    }
+
+    public func removeEmptyDirectory(name: String) throws {
+        try validateName(name)
+        var info = stat()
+        if fstatat(descriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+            if errno == ENOENT { return }
+            throw LocalIOError.system(errno)
+        }
+        guard info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid() else { throw LocalIOError.unsafePath }
+        guard unlinkat(descriptor, name, AT_REMOVEDIR) == 0 || errno == ENOTEMPTY else { throw LocalIOError.system(errno) }
     }
 
     public func lock(name: String) throws -> Int32 {

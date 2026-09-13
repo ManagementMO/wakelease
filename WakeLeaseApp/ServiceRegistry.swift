@@ -7,20 +7,28 @@ import ServiceManagement
 enum ServiceRegistry {
     struct Failure: Error, LocalizedError {
         let message: String
-        var errorDescription: String? { message }
+        var errorDescription: String? {
+            message
+        }
     }
 
     static var bundledCLI: URL {
         if isPackaged { return Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/" + WakeLeaseIdentity.cliBinaryName) }
         return (Bundle.main.executableURL?.deletingLastPathComponent() ?? Bundle.main.bundleURL).appendingPathComponent(WakeLeaseIdentity.cliBinaryName)
     }
-    static var isPackaged: Bool { Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier == WakeLeaseIdentity.appBundleID }
-    static var canInstall: Bool { isPackaged && ComponentTrust.currentTeam != nil }
+    static var isPackaged: Bool {
+        Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier == WakeLeaseIdentity.appBundleID
+    }
+    static var canInstall: Bool {
+        isPackaged && ComponentTrust.currentTeam != nil
+    }
 
     static func statuses() -> [String: String] {
-        ["Daemon": name(SMAppService.agent(plistName: "LaunchAgent.plist").status),
-         "Helper": name(SMAppService.daemon(plistName: "LaunchDaemon.plist").status),
-         "Menu at login": name(SMAppService.mainApp.status)]
+        [
+            "Daemon": name(SMAppService.agent(plistName: "LaunchAgent.plist").status),
+            "Helper": name(SMAppService.daemon(plistName: "LaunchDaemon.plist").status),
+            "Menu at login": name(SMAppService.mainApp.status),
+        ]
     }
 
     static func install(preferences: WakeLeasePreferences) throws -> String {
@@ -35,6 +43,7 @@ enum ServiceRegistry {
             try service.register()
         }
         if preferences.launchMenuAtLogin, SMAppService.mainApp.status == .notRegistered { try SMAppService.mainApp.register() }
+        try CLILinkManager(stateDirectory: WakeLeasePaths.standardDirectory).install(target: bundledCLI)
         if helper.status == .requiresApproval || daemon.status == .requiresApproval {
             return "Approve WakeLease in System Settings → General → Login Items & Extensions, then refresh."
         }
@@ -49,7 +58,9 @@ enum ServiceRegistry {
         } else if SMAppService.mainApp.status != .notRegistered { try await SMAppService.mainApp.unregister() }
     }
 
-    static func openApprovalSettings() { SMAppService.openSystemSettingsLoginItems() }
+    static func openApprovalSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
 
     private static func verify(_ url: URL, role: ComponentTrust.Role) throws {
         var code: SecStaticCode?

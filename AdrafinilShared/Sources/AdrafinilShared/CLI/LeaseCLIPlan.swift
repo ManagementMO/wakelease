@@ -2,8 +2,12 @@ import Foundation
 
 public struct LeaseCLIUsageError: Error, LocalizedError {
     public let message: String
-    public init(_ message: String) { self.message = message }
-    public var errorDescription: String? { message }
+    public init(_ message: String) {
+        self.message = message
+    }
+    public var errorDescription: String? {
+        message
+    }
 }
 
 public struct LeaseCLIPlan: Sendable {
@@ -20,8 +24,8 @@ public struct LeaseCLIPlan: Sendable {
         let first = arguments.first ?? "help"
         command = ["--help", "-h"].contains(first) ? "help" : (["--version", "-v"].contains(first) ? "version" : first)
         generatedKey = command + ":" + UUID().uuidString.lowercased()
-        let booleanOptions: Set<String> = ["--json", "--display", "--all", "--dry-run", "--yes", "--help", "--strict"]
-        let valueOptions: Set<String> = ["--source", "--reason", "--ttl", "--for", "--pid", "--parent", "--session", "--state-dir", "--home", "--session-variable"]
+        let booleanOptions: Set = ["--json", "--display", "--all", "--dry-run", "--yes", "--help", "--strict", "--purge", "--remove-app"]
+        let valueOptions: Set = ["--source", "--reason", "--ttl", "--for", "--pid", "--parent", "--session", "--state-dir", "--home", "--session-variable"]
         let args = Array(arguments.dropFirst())
         var values: [String: String] = [:]
         var flags: Set<String> = []
@@ -48,7 +52,7 @@ public struct LeaseCLIPlan: Sendable {
                 }
             } else { throw LeaseCLIUsageError("Unknown option: \(argument)") }
         }
-        if command == "run", !flags.contains("--help"), (child.isEmpty || !positionals.isEmpty) {
+        if command == "run", !flags.contains("--help"), child.isEmpty || !positionals.isEmpty {
             throw LeaseCLIUsageError("Use: wakelease run -- command [arguments]")
         }
         if command != "run", !child.isEmpty { throw LeaseCLIUsageError("Only run accepts a command after --.") }
@@ -91,13 +95,12 @@ public struct LeaseCLIPlan: Sendable {
         }
         let parent = values["--parent"].flatMap(UUID.init(uuidString:))
         if values["--parent"] != nil, parent == nil { throw LeaseCLIUsageError("--parent must be a lease UUID.") }
-        let operation: String
-        switch command {
-        case "run", "watch": operation = "acquire"
-        case "heartbeat": operation = "renew"
-        case "sleep": operation = "pause"
-        case "release" where flags.contains("--all"): operation = "releaseAll"
-        default: operation = command
+        let operation: String = switch command {
+        case "run", "watch": "acquire"
+        case "heartbeat": "renew"
+        case "sleep": "pause"
+        case "release" where flags.contains("--all"): "releaseAll"
+        default: command
         }
         let kind: LeaseSourceKind = command == "hold" ? .timed : (command == "run" ? .command : (command == "watch" ? .process : .custom))
         if command == "run" { owner = SystemProcessIdentity.read(getpid()) }

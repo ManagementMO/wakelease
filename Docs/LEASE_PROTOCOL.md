@@ -63,7 +63,9 @@ Request bodies are limited to 65,536 bytes; replies to 2 MiB. Empty/oversized/pa
 
 `bootID` and `issuedAt` in this example are explanatory values, not values to paste into a live request. Mutations require the current `kern.bootsessionuuid` and issue time in **seconds of `mach_continuous_time` converted with `mach_timebase_info`**. Use the CLI unless implementing a native client. Continuous time advances across system sleep; wall-clock corrections cannot extend a deadline.
 
-Read-only operations: `status`, `doctor`, `ping`. Mutations: `acquire`, `hold`, `renew`, `wait`, `release`, `releaseAll`, `pause`, `resume`.
+Read-only operations: `status`, `doctor`, `ping`, `settings`. Mutations: `acquire`, `hold`, `renew`, `wait`, `release`, `releaseAll`, `pause`, `resume`, `configure`.
+
+`settings` returns a versioned `preferences` object. `configure` supplies that object as the optional request `preferences` field and requires the same boot/time metadata as other mutations. Preferences are normalized, atomically saved, and applied to existing waits/lifetime bounds. Unsupported preference versions are rejected. Administrative configuration ordering is bounded within the running daemon; it is not an exactly-once transaction across a crash. The CLI's expanded `doctor --json` report is a separate read-only presentation over protocol status and local observations.
 
 Optional fields: `owner`, `sessionID`, `parentLeaseID`, `metadata`. Owner shape:
 

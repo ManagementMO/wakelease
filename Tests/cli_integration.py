@@ -70,6 +70,74 @@ class CLIIntegration(unittest.TestCase):
         self.cli_run("resume")
         self.cli_run("release", "--all")
 
+    def protocol(self, request):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(5)
+            connection.connect(str(Path(self.directory.name) / "cli.sock"))
+            body = json.dumps(dict(version=1, **request)).encode()
+            connection.sendall(struct.pack(">I", len(body)) + body)
+            def receive(count):
+                data = b""
+                while len(data) < count:
+                    part = connection.recv(count - len(data))
+                    if not part:
+                        raise AssertionError("Truncated protocol response")
+                    data += part
+                return data
+            size = struct.unpack(">I", receive(4))[0]
+            self.assertLessEqual(size, 2 * 1024 * 1024)
+            return json.loads(receive(size))
+
+    def configure(self, preferences):
+        stamp = json.loads(self.cli_run("acquire", "settings-stamp", "--ttl", "120", "--json").stdout)
+        lease = stamp["lease"]
+        return self.protocol(dict(operation="configure", bootID=stamp["status"]["snapshot"]["bootID"],
+                                  issuedAt=lease["deadline"] - lease["ttlSeconds"], preferences=preferences))
+
+    def test_settings_change_is_live_and_persists_across_restart(self):
+        original = self.protocol(dict(operation="settings"))["preferences"]
+        updated = json.loads(json.dumps(original))
+        updated["policy"]["waitingPolicy"] = "sleep"
+        try:
+            response = self.configure(updated)
+            self.assertTrue(response["ok"], response)
+            self.cli_run("wait", "settings-stamp")
+            self.assertFalse(self.status()["snapshot"]["demand"]["system"])
+            self.daemon.terminate()
+            self.daemon.wait(timeout=10)
+            self.daemon.stdout.close()
+            self.daemon.stderr.close()
+            self.start_daemon()
+            self.assertEqual(self.protocol(dict(operation="settings"))["preferences"]["policy"]["waitingPolicy"], "sleep")
+        finally:
+            self.assertTrue(self.configure(original)["ok"])
+
+    def test_doctor_json_is_read_only_and_scoped(self):
+        result = self.cli_run("doctor", "--json", "--home", self.directory.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["mode"], "simulation")
+        self.assertTrue(any(item["id"] == "powerControl" and item["level"] == "skipped" for item in report["checks"]))
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+
+    def test_doctor_reports_malformed_integration_without_overwriting(self):
+        with tempfile.TemporaryDirectory(prefix="wl-doctor-") as home:
+            config = Path(home) / ".claude/settings.json"
+            config.parent.mkdir()
+            config.write_text('{"hooks":[]}')
+            result = self.cli_run("doctor", "--json", "--home", home)
+            self.assertEqual(result.returncode, 1)
+            report = json.loads(result.stdout)
+            self.assertTrue(any(item["id"] == "integration.claude-code" and item["level"] == "failure" for item in report["checks"]))
+            self.assertEqual(config.read_text(), '{"hooks":[]}')
+
+    def test_uninstall_dry_run_does_not_release_work(self):
+        self.cli_run("acquire", "dry-run-work")
+        result = self.cli_run("uninstall", "--dry-run", "--home", self.directory.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("confirm SleepDisabled OFF", result.stdout)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 1)
+
     def test_development_binaries_refuse_production_modes(self):
         if os.getuid() == 0:
             self.skipTest("This test requires an unprivileged developer account")
@@ -274,7 +342,7 @@ class CLIIntegration(unittest.TestCase):
         self.assertTrue(self.status()["snapshot"]["demand"]["display"])
 
     def test_doctor_reports_simulation_honestly(self):
-        result = self.cli_run("doctor")
+        result = self.cli_run("doctor", "--home", self.directory.name)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("simulation", result.stdout.lower())
 

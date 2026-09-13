@@ -4,7 +4,9 @@ import Foundation
 
 struct LeaseRemoteError: Error, LocalizedError {
     let message: String
-    var errorDescription: String? { message }
+    var errorDescription: String? {
+        message
+    }
 }
 
 enum WakeLeaseCLI {
@@ -14,6 +16,19 @@ enum WakeLeaseCLI {
             let plan = try LeaseCLIPlan(arguments: arguments)
             if plan.command == "help" || plan.flags.contains("--help") { print(help); return 0 }
             if plan.command == "version" { print("wakelease \(WakeLeaseIdentity.marketingVersion) (protocol 1)"); return 0 }
+            if plan.command == "doctor" {
+                guard plan.positionals.isEmpty, Set(plan.values.keys).union(plan.flags).isSubset(of: ["--json", "--home", "--state-dir"]) else { throw LeaseCLIUsageError("Use: wakelease doctor [--json]") }
+                let report = LeaseDiagnostics.collect(directory: plan.directory, home: URL(fileURLWithPath: plan.values["--home"] ?? NSHomeDirectory()), cliPath: HookCommandSupport.canonicalCLIPath())
+                if plan.flags.contains("--json") { printJSON(report) }
+                else {
+                    print("WakeLease doctor · \(report.mode)\n")
+                    for check in report.checks {
+                        print("[\(check.level.rawValue)] \(check.id): \(check.message)")
+                    }
+                }
+                return report.hasFailures ? 1 : 0
+            }
+            if plan.command == "uninstall" { return try LeaseMaintenanceCLI.uninstall(plan) }
             if plan.command == "integrations" { return try LeaseIntegrationCLI.run(plan) }
             if plan.command == "hooks" { return try LeaseIntegrationCLI.generate(plan) }
             if plan.command == "mcp" {
@@ -24,10 +39,9 @@ enum WakeLeaseCLI {
             if plan.command == "run" { return try run(plan, client: client) }
             if plan.command == "watch" { return try watch(plan, client: client) }
             let reply = try checked(client.send(plan.request()))
-            if plan.command == "status" || plan.command == "doctor" {
+            if plan.command == "status" {
                 guard let status = reply.status else { throw LeaseRemoteError(message: "The daemon omitted its status.") }
                 if plan.flags.contains("--json") { printJSON(status) }
-                else if plan.command == "doctor" { return doctor(status, directory: plan.directory) }
                 else { printStatus(status) }
             } else if plan.flags.contains("--json") {
                 printJSON(reply)
@@ -126,12 +140,11 @@ enum WakeLeaseCLI {
 
     private static func printStatus(_ status: LeaseServiceStatus) {
         let state = status.snapshot
-        let title: String
-        if status.mode == "simulation" { title = "SIMULATION (no power changes)" }
-        else if state.demand.system && status.power.applied?.system == true && status.power.helperConnected && status.power.error == nil { title = "AWAKE" }
-        else if state.demand.system { title = "WAKE PROTECTION UNCONFIRMED" }
-        else if status.power.applied?.system == true { title = "RESTORING NORMAL SLEEP" }
-        else { title = "NORMAL SLEEP" }
+        let title = if status.mode == "simulation" { "SIMULATION (no power changes)" }
+        else if state.demand.system, status.power.applied?.system == true, status.power.helperConnected, status.power.error == nil { "AWAKE" }
+        else if state.demand.system { "WAKE PROTECTION UNCONFIRMED" }
+        else if status.power.applied?.system == true { "RESTORING NORMAL SLEEP" }
+        else { "NORMAL SLEEP" }
         print("\(title) · \(state.effectiveCount) effective lease(s)")
         if state.paused { print("Paused — new leases are blocked.") }
         print("")
@@ -148,31 +161,12 @@ enum WakeLeaseCLI {
         if let error = status.power.error { print("Warning: \(error)") }
     }
 
-    private static func doctor(_ status: LeaseServiceStatus, directory: URL) -> Int32 {
-        print("WakeLease doctor\n")
-        print("Daemon           reachable (\(status.version))")
-        print("Protocol         \(status.protocolVersion)")
-        print("Mode             \(status.mode)")
-        print("Socket           user-scoped; peer credentials verified")
-        print("State directory  \(directory.path)")
-        print("Leases           \(status.snapshot.effectiveCount) effective / \(status.snapshot.leases.count) retained")
-        if status.mode == "simulation" {
-            print("Power control    NOT ACTIVE — simulation deliberately uses no helper")
-            print("Hardware tests   NOT VERIFIED by this diagnostic")
-        } else {
-            print("Helper           \(status.power.helperConnected ? "connected" : "unavailable")")
-        }
-        if let error = status.power.error { print("Problem          \(error)"); return 1 }
-        return 0
-    }
-
     static func error(_ message: String) {
         FileHandle.standardError.write(Data(("wakelease: " + message + "\n").utf8))
     }
 
     static let help = """
-    wakelease — keep your Mac working only while work holds a lease
-
+    wakelease — keep your Mac working only while work holds a lease\n
     Usage:
       wakelease acquire <key> [--source <name>] [--reason <text>] [--ttl <seconds>]
       wakelease renew <key> [--ttl <seconds>]
@@ -190,19 +184,17 @@ enum WakeLeaseCLI {
       wakelease mcp [--source <name>]
       wakelease pause | resume
       wakelease sleep
-      wakelease version
-
+      wakelease uninstall [--dry-run] [--yes] [--purge] [--remove-app]
+      wakelease version\n
     Acquire/hold/run/watch accept --display to keep the display awake too.
     System-only is the default. --pid records and verifies process birth identity.
     --parent <lease-uuid> records an independent child lease; parent release never
-    cascades. Keys are literal: release accepts exactly what status prints.
-
+    cascades. Keys are literal: release accepts exactly what status prints.\n
     Leases are finite (default 4h, maximum 24h); renew before the deadline.
     Waiting defaults to a 10-minute grace, bounded by the lease's own expiry.
     run inherits the terminal and streams, forwards signals and preserves exit status.
     sleep currently pauses lease admission and restores normal sleep policy; it
-    does not force immediate open-lid sleep. resume explicitly enables admission.
-
+    does not force immediate open-lid sleep. resume explicitly enables admission.\n
     Development: start WakeLeaseDaemon --simulate to exercise the protocol without
     touching power management. Simulation is visibly labeled and does NOT keep
     the Mac awake. WAKELEASE_STATE_DIR selects an owned, private state directory.

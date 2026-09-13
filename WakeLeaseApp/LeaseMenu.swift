@@ -79,6 +79,13 @@ struct LeaseMenu: View {
                     .fixedSize(horizontal: false, vertical: true).padding(.bottom, 12)
             }
             if model.status != nil {
+                Menu("Timed Hold", systemImage: "timer") {
+                    Button("15 minutes") { model.hold(seconds: 900) }
+                    Button("1 hour") { model.hold(seconds: 3_600) }
+                    Button("2 hours") { model.hold(seconds: 7_200) }
+                }
+                .disabled(model.busy || model.preview || model.status?.snapshot.paused == true || model.status?.snapshot.cutouts.isEmpty == false)
+                .padding(.bottom, 12)
                 Button {
                     if model.status?.snapshot.paused == true { model.perform("resume") }
                     else { confirmPause = true }
@@ -134,7 +141,9 @@ struct LeaseMenu: View {
 private struct LeaseRow: View {
     let lease: WakeLease
     let release: () -> Void
-    private var name: String { LeaseIntegrations.all.first(where: { $0.id == lease.source })?.displayName ?? lease.source }
+    private var name: String {
+        lease.source == "manual" && lease.sourceKind == .timed ? "Timed hold" : (LeaseIntegrations.all.first(where: { $0.id == lease.source })?.displayName ?? lease.source)
+    }
     private var age: String {
         let minutes = max(0, Int(Date().timeIntervalSince(lease.acquiredAt) / 60))
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
@@ -142,7 +151,7 @@ private struct LeaseRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: lease.wakeClass == .display ? "display" : "terminal")
+            Image(systemName: lease.wakeClass == .display ? "display" : (lease.sourceKind == .timed ? "timer" : "terminal"))
                 .frame(width: 22).foregroundStyle(.secondary).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -156,6 +165,11 @@ private struct LeaseRow: View {
                     if lease.state == .waitingForUser, let expiry = lease.waitingExpiresAt, expiry > Date() {
                         Text("·")
                         Text(min(expiry, lease.expiresAt), style: .timer).monospacedDigit()
+                    }
+                    if lease.sourceKind == .timed, lease.state != .waitingForUser {
+                        Text("·")
+                        Text(lease.expiresAt, style: .timer).monospacedDigit()
+                        Text("remaining")
                     }
                     if lease.parentLeaseID != nil || lease.metadata["scope"] == "subagent" { Text("· independent child") }
                 }

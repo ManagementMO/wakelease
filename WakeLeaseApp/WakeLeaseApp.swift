@@ -4,7 +4,6 @@ import Foundation
 import SwiftUI
 import UserNotifications
 
-@main
 struct WakeLeaseApp: App {
     @NSApplicationDelegateAdaptor(LeaseAppDelegate.self) private var delegate
     @State private var model: MenuModel
@@ -35,12 +34,12 @@ struct WakeLeaseApp: App {
 
 @MainActor
 final class LeaseAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
-    static weak var shared: LeaseAppDelegate?
+    weak static var shared: LeaseAppDelegate?
     static var model: MenuModel?
     private var settingsWindow: NSWindow?
     private var previewWindow: NSWindow?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_: Notification) {
         Self.shared = self
         ProcessInfo.processInfo.disableAutomaticTermination(WakeLeaseIdentity.name + " is a resident menu-bar utility")
         NSApp.setActivationPolicy(.accessory)
@@ -86,9 +85,11 @@ final class LeaseAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
+        false
+    }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
         showSettings()
         return true
     }
@@ -99,7 +100,7 @@ final class LeaseAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         settingsWindow = window(title: "WakeLease Settings", view: LeaseSettings(model: model), size: NSSize(width: 640, height: 540))
     }
 
-    private func window<Content: View>(title: String, view: Content, size: NSSize) -> NSWindow {
+    private func window(title: String, view: some View, size: NSSize) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = title
         window.isReleasedWhenClosed = false
@@ -115,10 +116,10 @@ final class LeaseAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func windowWillClose(_ notification: Notification) {
         if notification.object as? NSWindow === settingsWindow { settingsWindow = nil }
         if notification.object as? NSWindow === previewWindow { previewWindow = nil }
-        if settingsWindow == nil && previewWindow == nil { NSApp.setActivationPolicy(.accessory) }
+        if settingsWindow == nil, previewWindow == nil { NSApp.setActivationPolicy(.accessory) }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    nonisolated func userNotificationCenter(_: UNUserNotificationCenter, willPresent _: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner]
     }
 }

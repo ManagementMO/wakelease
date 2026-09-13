@@ -38,7 +38,9 @@ public struct LeaseIntegrationManager: Sendable {
     public let home: URL
     public let stateDirectory: URL
     public let cliPath: String
-    private var receiptDirectory: URL { stateDirectory.appendingPathComponent("integrations", isDirectory: true) }
+    private var receiptDirectory: URL {
+        stateDirectory.appendingPathComponent("integrations", isDirectory: true)
+    }
 
     public init(home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true), stateDirectory: URL = WakeLeasePaths.directory, cliPath: String) {
         self.home = home
@@ -107,10 +109,11 @@ public struct LeaseIntegrationManager: Sendable {
 
     public func uninstall(_ id: String, dryRun: Bool = false) throws -> LeaseIntegrationReport {
         let descriptor = try LeaseIntegrations.descriptor(id)
-        guard let receipt = try loadReceipt(id) else { return LeaseIntegrationReport(changed: false, diff: "(unchanged)") }
+        guard try loadReceipt(id) != nil else { return LeaseIntegrationReport(changed: false, diff: "(unchanged)") }
         let storage = try SecureDirectory(url: receiptDirectory, create: false)
         let lock = try dryRun ? -1 : storage.lock(name: "install.lock")
         defer { if lock >= 0 { Darwin.close(lock) } }
+        guard let receipt = try loadReceipt(id) else { return LeaseIntegrationReport(changed: false, diff: "(unchanged)") }
         var changes: [(URL, Data, Data?, UInt16)] = []
         for (index, file) in receipt.files.enumerated() {
             let url = home.appendingPathComponent(file.path)
@@ -150,12 +153,20 @@ public struct LeaseIntegrationManager: Sendable {
         do {
             let descriptor = try LeaseIntegrations.descriptor(id)
             if descriptor.format == .manual { return LeaseIntegrationHealth(id: id, state: "manual", note: descriptor.note) }
-            guard let receipt = try loadReceipt(id) else { return LeaseIntegrationHealth(id: id, state: "notConfigured", note: descriptor.note) }
+            guard let receipt = try loadReceipt(id) else {
+                if descriptor.format == .nestedJSON || descriptor.format == .flatJSON, let data = try read(home.appendingPathComponent(descriptor.relativePath)) {
+                    _ = try LeaseJSONHooks(data: data, flat: descriptor.format == .flatJSON)
+                }
+                return LeaseIntegrationHealth(id: id, state: "notConfigured", note: descriptor.note)
+            }
+            guard FileManager.default.isExecutableFile(atPath: receipt.cliPath) else { return LeaseIntegrationHealth(id: id, state: "missingExecutable", note: "The recorded hook executable is missing. Review setup from the current app.") }
             for file in receipt.files {
                 guard let data = try read(home.appendingPathComponent(file.path)) else { throw LeaseIntegrationFailure.modified }
                 if descriptor.format == .nestedJSON || descriptor.format == .flatJSON {
                     let editor = try LeaseJSONHooks(data: data, flat: descriptor.format == .flatJSON)
-                    for hook in file.bindings where try !editor.contains(hook) { throw LeaseIntegrationFailure.modified }
+                    for hook in file.bindings where try !editor.contains(hook) {
+                        throw LeaseIntegrationFailure.modified
+                    }
                 } else if digest(data) != file.installedHash { throw LeaseIntegrationFailure.modified }
             }
             return LeaseIntegrationHealth(id: id, state: descriptor.requiresApproval ? "needsApproval" : "configured", note: descriptor.note)
@@ -166,7 +177,7 @@ public struct LeaseIntegrationManager: Sendable {
         let descriptor = try LeaseIntegrations.descriptor(id)
         do {
             let storage = try SecureDirectory(url: receiptDirectory, create: false)
-            guard let data = try storage.read(name: id + ".json", maximum: 131072) else { return nil }
+            guard let data = try storage.read(name: id + ".json", maximum: 131_072) else { return nil }
             let receipt = try JSONDecoder().decode(Receipt.self, from: data)
             guard receipt.version == 1, receipt.id == id, receipt.files.map(\.path) == descriptor.relativeFiles else { throw LeaseIntegrationFailure.invalidReceipt }
             return receipt

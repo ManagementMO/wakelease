@@ -4,6 +4,9 @@ import SwiftUI
 
 struct LeaseSettings: View {
     @Bindable var model: MenuModel
+    @State private var confirmUninstall = false
+    @State private var purgeState = false
+    @State private var removeApplication = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,6 +50,23 @@ struct LeaseSettings: View {
             }
             .padding(24).frame(width: 580, height: 390)
         }
+        .sheet(isPresented: $confirmUninstall) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Uninstall WakeLease?").font(.title2.weight(.semibold))
+                Text("Active jobs may be interrupted by sleep. Coordinate with other Mac users before removing the machine-wide helper. WakeLease will pause, confirm cleanup, remove recorded integrations, and unregister its services. Modified or foreign files stop cleanup rather than being overwritten.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Toggle("Remove local preferences, logs and backups", isOn: $purgeState)
+                Toggle("Move the application to Trash", isOn: $removeApplication)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { confirmUninstall = false }.keyboardShortcut(.cancelAction)
+                    Button("Uninstall", role: .destructive) {
+                        confirmUninstall = false
+                        model.uninstall(purge: purgeState, removeApp: removeApplication)
+                    }
+                }
+            }.padding(24).frame(width: 450)
+        }
     }
 
     private var general: some View {
@@ -76,6 +96,10 @@ struct LeaseSettings: View {
                 Text("Only with a confirmed closed lid and no external display or conflicting wake requirement. Otherwise normal macOS sleep behavior is restored.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: { Text("Final release") }
+            Section {
+                Button("Uninstall WakeLease…", role: .destructive) { confirmUninstall = true }
+                    .disabled(model.preview || model.busy || !ServiceRegistry.isPackaged)
+            } header: { Text("Removal") }
         }.formStyle(.grouped)
     }
 
@@ -88,7 +112,7 @@ struct LeaseSettings: View {
                     Text("Allow sleep immediately").tag(AgentWaitingPolicy.sleep)
                 }
                 if model.preferences.policy.waitingPolicy == .grace {
-                    Stepper(value: Binding(get: { Int(model.preferences.policy.waitingGraceSeconds / 60) }, set: { value in model.changePreferences { $0.policy.waitingGraceSeconds = Double(value * 60) } }), in: 1...120) {
+                    Stepper(value: Binding(get: { Int(model.preferences.policy.waitingGraceSeconds / 60) }, set: { value in model.changePreferences { $0.policy.waitingGraceSeconds = Double(value * 60) } }), in: 1 ... 120) {
                         LabeledContent("Grace period", value: "\(Int(model.preferences.policy.waitingGraceSeconds / 60)) minutes")
                     }
                 }
@@ -105,17 +129,17 @@ struct LeaseSettings: View {
     private var safety: some View {
         Form {
             Section {
-                Stepper(value: policy(\.batteryCutoff), in: 10...50) { LabeledContent("Battery cutoff", value: "\(model.preferences.policy.batteryCutoff)%") }
-                Stepper(value: policy(\.thermalCutoff), in: 70...95, step: 1) { LabeledContent("Temperature cutoff", value: "\(Int(model.preferences.policy.thermalCutoff)) °C") }
+                Stepper(value: policy(\.batteryCutoff), in: 10 ... 50) { LabeledContent("Battery cutoff", value: "\(model.preferences.policy.batteryCutoff)%") }
+                Stepper(value: policy(\.thermalCutoff), in: 70 ... 95, step: 1) { LabeledContent("Temperature cutoff", value: "\(Int(model.preferences.policy.thermalCutoff)) °C") }
                 Text("Cutoffs apply to closed-lid work. Battery re-arms above the cutoff plus five points or on AC. Thermal protection waits for sustained cooling; missing readings do not clear a temperature-dependent latch.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: { Text("Safety outranks work") }
             Section {
-                Stepper(value: Binding(get: { Int(model.preferences.policy.maximumTTLSeconds / 3600) }, set: { value in model.changePreferences { $0.policy.maximumTTLSeconds = Double(value * 3600) } }), in: 1...24) {
-                    LabeledContent("Maximum lease lifetime", value: "\(Int(model.preferences.policy.maximumTTLSeconds / 3600)) hours")
+                Stepper(value: Binding(get: { Int(model.preferences.policy.maximumTTLSeconds / 3_600) }, set: { value in model.changePreferences { $0.policy.maximumTTLSeconds = Double(value * 3_600) } }), in: 1 ... 24) {
+                    LabeledContent("Maximum lease lifetime", value: "\(Int(model.preferences.policy.maximumTTLSeconds / 3_600)) hours")
                 }
-                Stepper(value: Binding(get: { Int(model.preferences.policy.defaultTTLSeconds / 3600) }, set: { value in model.changePreferences { $0.policy.defaultTTLSeconds = Double(value * 3600) } }), in: 1...max(1, Int(model.preferences.policy.maximumTTLSeconds / 3600))) {
-                    LabeledContent("Default lifetime", value: "\(Int(model.preferences.policy.defaultTTLSeconds / 3600)) hours")
+                Stepper(value: Binding(get: { Int(model.preferences.policy.defaultTTLSeconds / 3_600) }, set: { value in model.changePreferences { $0.policy.defaultTTLSeconds = Double(value * 3_600) } }), in: 1 ... max(1, Int(model.preferences.policy.maximumTTLSeconds / 3_600))) {
+                    LabeledContent("Default lifetime", value: "\(Int(model.preferences.policy.defaultTTLSeconds / 3_600)) hours")
                 }
                 Text("Process birth identity and finite deadlines guard against crashed jobs and missed hooks. Automatic process sniffing and CPU-idle guesses are not used.")
                     .font(.caption).foregroundStyle(.secondary)

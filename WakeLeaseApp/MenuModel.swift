@@ -32,9 +32,15 @@ final class MenuModel {
     @ObservationIgnored private var lastNotifiedCutout: Date?
     @ObservationIgnored private let client = LeaseSocketClient()
 
-    var presentation: LeasePresentation { LeasePresentation(status: status) }
-    var leases: [WakeLease] { status?.snapshot.leases ?? [] }
-    var manager: LeaseIntegrationManager { LeaseIntegrationManager(cliPath: ServiceRegistry.bundledCLI.path) }
+    var presentation: LeasePresentation {
+        LeasePresentation(status: status)
+    }
+    var leases: [WakeLease] {
+        status?.snapshot.leases ?? []
+    }
+    var manager: LeaseIntegrationManager {
+        LeaseIntegrationManager(cliPath: ServiceRegistry.bundledCLI.path)
+    }
 
     init(previewState: String? = nil) {
         preview = previewState != nil
@@ -75,13 +81,21 @@ final class MenuModel {
     }
 
     func perform(_ operation: String, key: String? = nil) {
+        submit(LeaseRequest(operation: operation, key: key))
+    }
+
+    func hold(seconds: TimeInterval) {
+        submit(LeaseRequest(operation: "hold", key: "manual:" + UUID().uuidString.lowercased(), source: "manual", sourceKind: .timed, ttlSeconds: seconds, reason: "Manual timed hold"))
+    }
+
+    private func submit(_ request: LeaseRequest) {
         guard !preview, !busy else { return }
         busy = true
         problem = nil
         Task { @MainActor in
             defer { busy = false; refresh() }
             do {
-                let result = try await client.sendAsync(LeaseRequest(operation: operation, key: key))
+                let result = try await client.sendAsync(request)
                 guard result.ok else { throw ServiceRegistry.Failure(message: result.error?.message ?? "The action was refused.") }
                 status = result.status
             } catch { problem = error.localizedDescription }
@@ -89,6 +103,7 @@ final class MenuModel {
     }
 
     func changePreferences(_ change: (inout WakeLeasePreferences) -> Void) {
+        guard !busy else { return }
         var updated = preferences
         change(&updated)
         updated = updated.normalized()
@@ -106,14 +121,15 @@ final class MenuModel {
             request.preferences = desired
             do {
                 let result = try await client.sendAsync(request)
+                guard !Task.isCancelled else { return }
                 guard result.ok else { throw ServiceRegistry.Failure(message: result.error?.message ?? "Settings were refused.") }
                 if generation == editGeneration, let saved = result.preferences { preferences = saved; information = "Settings applied." }
             } catch {
+                guard !Task.isCancelled else { return }
                 if generation == editGeneration {
-                    let offline: Bool
-                    switch error {
-                    case LocalIOError.unavailable, LocalIOError.system(ENOENT): offline = true
-                    default: offline = false
+                    let offline = switch error {
+                    case LocalIOError.unavailable, LocalIOError.system(ENOENT): true
+                    default: false
                     }
                     if offline {
                         do {
@@ -158,6 +174,21 @@ final class MenuModel {
         catch { problem = error.localizedDescription }
     }
 
+    func uninstall(purge: Bool, removeApp: Bool) {
+        guard !preview, !busy else { return }
+        busy = true
+        problem = nil
+        saveTask?.cancel()
+        saveTask = nil
+        Task { @MainActor in
+            do {
+                try await UninstallCoordinator.run(environment: AppUninstallEnvironment(), purge: purge)
+                if removeApp { try FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil) }
+                NSApp.terminate(nil)
+            } catch { problem = error.localizedDescription; busy = false }
+        }
+    }
+
     func refreshIntegrations() {
         guard !preview else { return }
         let manager = manager
@@ -195,7 +226,9 @@ final class MenuModel {
         }
     }
 
-    func copy(_ text: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+    func copy(_ text: String) {
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+    }
 
     private func notifyCutoutIfNeeded(_ event: LeaseEvent?) {
         guard preferences.notifySafety, !preview, let event, event.at != lastNotifiedCutout else { return }
@@ -211,15 +244,15 @@ final class MenuModel {
         let now = Date()
         var book = LeaseBook(bootID: "preview")
         if ["active", "waiting", "cutout"].contains(name) {
-            _ = try? book.acquire(LeaseProposal(key: "preview:tests", source: "codex", reason: "Integration test suite"), at: LeaseTime(wall: now.addingTimeInterval(-1080), continuous: 1000))
+            _ = try? book.acquire(LeaseProposal(key: "preview:tests", source: "codex", reason: "Integration test suite"), at: LeaseTime(wall: now.addingTimeInterval(-1_080), continuous: 1_000))
         }
         if name == "active" {
-            _ = try? book.acquire(LeaseProposal(key: "preview:build", source: "build", ttlSeconds: 900, reason: "Release build"), at: LeaseTime(wall: now.addingTimeInterval(-120), continuous: 1960))
+            _ = try? book.acquire(LeaseProposal(key: "preview:build", source: "build", ttlSeconds: 900, reason: "Release build"), at: LeaseTime(wall: now.addingTimeInterval(-120), continuous: 1_960))
         }
-        _ = book.updateSafety(LeaseSafety(lidClosed: name != "normal", externalDisplayConnected: false, batteryPercent: 84, onBattery: false, temperatureCelsius: 62, thermalState: .nominal), at: LeaseTime(wall: now, continuous: 2080))
-        if name == "waiting" { _ = try? book.wait(key: "preview:tests", at: LeaseTime(wall: now, continuous: 2080)) }
-        if name == "cutout" { _ = book.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 91, thermalState: .serious), at: LeaseTime(wall: now, continuous: 2080)) }
-        if name == "paused" { _ = book.setPaused(true, at: LeaseTime(wall: now, continuous: 2080)) }
+        _ = book.updateSafety(LeaseSafety(lidClosed: name != "normal", externalDisplayConnected: false, batteryPercent: 84, onBattery: false, temperatureCelsius: 62, thermalState: .nominal), at: LeaseTime(wall: now, continuous: 2_080))
+        if name == "waiting" { _ = try? book.wait(key: "preview:tests", at: LeaseTime(wall: now, continuous: 2_080)) }
+        if name == "cutout" { _ = book.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 91, thermalState: .serious), at: LeaseTime(wall: now, continuous: 2_080)) }
+        if name == "paused" { _ = book.setPaused(true, at: LeaseTime(wall: now, continuous: 2_080)) }
         status = LeaseServiceStatus(mode: "system", snapshot: LeaseSnapshot(book: book, daemonBootID: UUID()), power: LeasePowerReport(applied: book.demand, helperConnected: true))
     }
 
