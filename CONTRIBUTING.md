@@ -1,49 +1,45 @@
-# Contributing
+# Contributing to WakeLease
 
-Bug reports, fixes, and new agent integrations are welcome.
+Read [AGENTS.md](AGENTS.md), [UPSTREAM.md](UPSTREAM.md), and [Docs/THREAT_MODEL.md](Docs/THREAT_MODEL.md) first. Preserve the MIT notice and upstream history. Do not reattribute inherited engineering or claim tests that were not performed.
 
-## Bugs
+## Development and verification
 
-Open an issue with the Bug report template. Include the `adrafinil status` output and the log excerpt it asks for. That's what makes a sleep/wake bug diagnosable. Security issues go through [SECURITY.md](SECURITY.md), not public issues.
-
-## Build
-
-App, daemon, helper, and CLI:
+Swift 6.2+ and macOS 15.4+ are required by this branch. Full Xcode is a separate build/signing gate; the Command Line Tools path is:
 
 ```sh
-xcodebuild -scheme Adrafinil -destination 'platform=macOS' build
+WAKELEASE_SOURCE_TESTING=1 swift test --scratch-path .build/source-testing \
+  --disable-xctest --disable-experimental-prebuilts
+python3 Tests/cli_integration.py
+python3 Tests/ui_smoke.py
+python3 Tests/package_smoke.py
+python3 Scripts/lint.py
 ```
 
-Shared core and tests:
+UI rendering needs a logged-in macOS desktop. Tests must use simulation/fake power controllers and temporary homes. Never install actual hooks, register privileged services, change `pmset`, or cause sleep as an automated-test side effect. Physical tests require explicit permission and the [recovery procedure](Docs/RECOVERY.md).
 
-```sh
-cd AdrafinilShared && swift test
-```
+Formatting follows the existing `.swiftformat` configuration. `Scripts/lint.py --format` uses pinned, checksum-verified tools and preserves existing headers/comments; inspect the diff afterward. No global package installation or Git configuration change is required. The lint runner points SourceKitten at an available Command Line Tools framework for that process rather than disabling SourceKit rules.
 
-## Style
+## Structure
 
-SwiftFormat, checked in CI (`swiftformat --lint .`). Enable the pre-commit hook once so staged Swift is formatted for you:
+- `WakeLeaseApp/`: native UI, service registration and user-confirmed removal.
+- `AdrafinilDaemon/`: user broker runtime, device observation and serialized power coordination.
+- `AdrafinilHelper/`: root mechanical boundary; keep it small and command-safe.
+- `AdrafinilShared/Sources/AdrafinilShared/Leases`: deterministic registry and actor boundary.
+- `AdrafinilShared/.../IPC`: secure local protocol, filesystem operations and component trust.
+- `AdrafinilShared/.../Installer`: generic integration contracts, payload adapters and receipt-based writes.
+- `Tests/` and `Scripts/`: end-to-end verification and reproducible build/release tools.
 
-```sh
-git config core.hooksPath .githooks
-```
+Historical Adrafinil UI and model files remain for lineage/regressions; they are not the new app's UI target.
 
-Or just run `swiftformat .` before committing.
+## Changes and reviews
 
-## Layout
+1. Reproduce a bug with a deterministic test before fixing it.
+2. Keep demand, applied state, ownership and ordering separate. Recheck generation after asynchronous release/cue work.
+3. Prefer native mechanisms and existing abstractions. Do not weaken signing, permissions, timeouts, release-age controls or verification to pass CI.
+4. Preserve source comments and legal notices; do not perform broad unrelated cleanup.
+5. Run targeted tests during iteration and the full safe suite before a release candidate.
+6. Describe limitations plainly, including any unverified hardware or signed-peer path.
 
-- `Adrafinil/` — menu-bar app and Settings.
-- `AdrafinilDaemon/` — LaunchAgent. Holds the assertion registry and all policy.
-- `AdrafinilHelper` — root LaunchDaemon. Only does `setSleepBlocked(_:)`. Keep it tiny.
-- `AdrafinilCLI/` — the `adrafinil` CLI that agent hooks call.
-- `AdrafinilShared/` — shared, tested core. Agent integrations live in `Installer/Integrations/`.
+New adapters need current primary-source evidence, realistic payload/configuration fixtures, parallel-session/background-work cases, safe install/uninstall tests, and an explicit capability limit. A running terminal or application is not proof of useful work. Never grant a host's trust/approval automatically.
 
-## New agent integration
-
-One file in `Installer/Integrations/`, registered in the `AgentIntegrations` switch. Users can already wire up any agent by hand via Settings → Agents → Add your own agent. A built-in integration is only worth it when the agent's hook-config format is stable.
-
-## Pull requests
-
-Use the template. Reference the issue you fix. Keep it focused. Test on real hardware with a real agent, not just a build. `swift test` and `swiftformat --lint .` must pass. Fill in the Authorship section: agent, model, and whether the session was attended or automatic.
-
-Contributions are MIT-licensed.
+Keep commits focused; small upstreamable bug fixes should be separable from derivative UI/features. Do not push, publish, open an upstream issue, or create a pull request without the maintainer's authorization. Contributions to this project are MIT-licensed.

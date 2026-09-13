@@ -1,224 +1,120 @@
-<div align="center">
+# WakeLease
 
-[![adrafinil](https://readme-typing-svg.demolab.com/?font=DotGothic16&weight=400&size=22&duration=3800&pause=900&color=FF5FA6&center=true&vCenter=true&width=820&height=60&lines=wakefulness%20only%20for%20machines%20with%20work%20left%20undone%20%E2%99%A1;stays%20awake%20while%20your%20agents%20work%20%E3%83%BB%20then%20sleeps;not%20caffeine%20%E3%83%BB%20the%20eugeroic;rx%20no.%20006%20%E3%83%BB%20%E6%9C%8D%E7%94%A8%E6%B3%A8%E6%84%8F%20%E3%83%BB%20best%20taken%20%40%203%20a.m.)](https://kagerou.glass)
+<img src="WakeLeaseApp/Assets.xcassets/AppIcon.appiconset/icon_128x128%402x.png" alt="WakeLease lease-token icon" width="96" height="96">
 
-<img src=".github/adrafinil-icon.png" alt="Adrafinil icon" width="128" height="128">
+**Keep your Mac working only while work holds a lease.**
 
-# adrafinil
+WakeLease is a native macOS menu-bar utility for local jobs, coding agents, builds, downloads, and custom workflows. Independent work holds independent, finite wake leases. When the final effective lease ends, WakeLease restores normal sleep behavior.
 
-**rx no. 006 ・ a·draf·i·nil /əˈdræfɪnɪl/ ・ a eugeroic for machines ♡**
+It is an **MIT-licensed derivative of [Adrafinil](https://github.com/kageroumado/adrafinil)** by kageroumado and contributors. The upstream power-management work, helper architecture, monitors, and regression tests are the foundation—not inventions of this project. See [UPSTREAM.md](UPSTREAM.md) and [LICENSE](LICENSE). This is an independent project without upstream endorsement.
 
-[![kagerou.glass](https://img.shields.io/badge/kagerou.glass-ff5fa6?style=for-the-badge&logo=safari&logoColor=white)](https://kagerou.glass/adrafinil/)
-[![@kageroumado](https://img.shields.io/badge/@kageroumado-76e6e0?style=for-the-badge&logo=x&logoColor=0d0a10)](https://x.com/kageroumado)
-[![macOS Tahoe](https://img.shields.io/badge/macOS-Tahoe_26%2B-0d0a10?style=for-the-badge&logo=apple&logoColor=white)](#requirements)
+> **Pre-release engineering build.** The CLI, broker, native UI, and production power path compile and have automated coverage. Live signed-peer authorization, service approval/update/uninstall, Intel execution, and physical closed-lid recovery remain release gates. No signed/notarized public WakeLease download or Homebrew cask is available from this checkout.
 
-<table>
-  <tr>
-    <td align="center"><img src=".github/adrafinil-awake.png" alt="Awake — kept awake while an agent works, with Keep awake / Let it sleep controls" width="300"><br><sub><b>awake</b> ・ an agent is working</sub></td>
-    <td align="center"><img src=".github/adrafinil-sleeping.png" alt="Idle — no agents, normal sleep, with a Keep awake button to hold it open yourself" width="300"><br><sub><b>idle</b> ・ no agents, normal sleep</sub></td>
-    <td align="center"><img src=".github/adrafinil-hold.png" alt="Hold — a duration picker to keep the Mac awake yourself for 15m, 30m, an hour, or indefinitely" width="300"><br><sub><b>hold</b> ・ keep it awake yourself — 15m to ∞</sub></td>
-  </tr>
-</table>
+## The model
 
-</div>
+- **One lease per work unit.** Concurrent jobs do not release each other's protection. Child/background leases can outlive a parent turn.
+- **Waiting is not working.** A producer can report that it needs a person. The default grace is ten minutes, then normal sleep is allowed. Heartbeats do not restart that grace.
+- **Every lease expires.** The default lifetime is four hours; the maximum per renewal is 24 hours. Process-bound leases also track the owner's kernel birth identity, not just a PID.
+- **Safety outranks work.** Closed-lid battery and thermal cutouts release this user's leases and latch against immediate reacquisition.
+- **Requested is not confirmed.** Status distinguishes desired demand, applied protection, helper connectivity, and failures.
+- **Timed manual work.** The menu bar can create a finite 15-minute, one-hour or two-hour hold, with its own countdown and release control.
+- **The menu bar is a view, not the broker.** Quitting it does not silently release a running job. Use **Allow Sleep Now** to release and pause deliberately.
 
-> **服用注意 ・ for machines that keep watch after you've gone to sleep.**
->
-> It's 3 a.m. You're asleep. The agent isn't — it's still mid-thought in a session you started
-> hours ago, and you've closed the lid over it like an eyelid that won't quite shut. `caffeinate`
-> and Amphetamine are stimulants: they keep the machine wired *forever*, whether or not anyone's
-> home. Adrafinil is the eugeroic. It does **nothing** until an agent acquires it, keeps your Mac
-> awake through a closed lid only for as long as that work lives, and clears the moment the last
-> session releases. It only ever wakes for the work — then you both sleep. ♡
+## Quick examples
 
----
-
-Keep your Mac awake **only while AI agents are working**.
-
-Adrafinil is a macOS menu bar app that prevents the system from sleeping — including clamshell
-(lid-closed) sleep — **exclusively while an AI coding agent has an active session**. When no agent
-is working, sleep behavior is untouched: close the lid and the Mac sleeps normally.
-
-It's the opposite of always-on wake utilities like `caffeinate` or Amphetamine. Adrafinil only
-intervenes when an agent (Claude Code, Codex, Cursor, …) is mid-task, and gets out of the way the
-moment that work finishes.
-
-**Three ways it stays awake:**
-
-- **Automatically** — agent hooks tell Adrafinil when a turn starts and ends, so it holds sleep only while an agent is actually working. (Optional process-sniffing can also spot a running agent that has no hooks installed.)
-- **Agent-driven** — an agent can deliberately keep the Mac awake *past its reply* for a long build or deploy, via the bundled MCP tool or the `adrafinil hold` CLI.
-- **Manually** — a menu-bar **Keep awake** button places a time-boxed hold yourself, even with **no agents running**; **Let it sleep** clears everything.
-
-> ⚠️ **Privileged sleep control.** Overriding clamshell sleep requires root. Adrafinil isolates
-> that in a tiny, audited helper that only exposes `setSleepBlocked(Bool)` — all policy lives in an
-> unprivileged daemon. It holds a standard `IOPMAssertion` for idle sleep and uses
-> `pmset disablesleep` for clamshell (lid-closed) sleep, after verifying on-device that the cleaner
-> private `IOPMrootDomain` paths don't keep a displayless lid-closed Mac awake. See
-> [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md) §2.
-
-## Features
-
-- **Agent-aware, not always-on.** Sleep is blocked only while ≥1 agent session holds an assertion. Zero sessions → normal sleep, including lid-close.
-- **Hook integration for 9 agents.** One-click installer wires Adrafinil into the hook systems of Claude Code, Codex, Cursor, Gemini CLI, Aider, Hermes, OpenCode, Cline, and Pi.
-- **Sub-50ms CLI.** `adrafinil acquire` / `release` are called from agent hooks and round-trip to the daemon in under 50ms, so they never stall an agent's workflow.
-- **Reference-counted assertions.** Overlapping sessions stack cleanly; sleep unblocks only when the last one releases.
-- **Thermal cutout.** If skin/CPU temperature crosses threshold while the lid is closed, all assertions are force-released so a bag-bound Mac can't cook itself.
-- **Idle release.** Assertions whose owning process has died or gone CPU-idle for N minutes are dropped automatically.
-- **Process sniffing (optional).** The daemon can auto-acquire when it sees a known agent binary running, even without hooks installed.
-- **Manual keep-awake (no agent needed).** A menu-bar **Keep awake** button starts a time-boxed hold on demand — for a long download, a local job, anything off-agent — then **Let it sleep** releases it.
-- **Lid-close audio + lid-open summary.** A chime confirms an assertion is held when you close the lid (the screen is off, so no notification); reopening shows what ran while you were away, peak temperature, and whether the thermal cutout fired.
-- **Clean uninstall.** Removes every hook entry it added across all agent configs.
-
-## Requirements
-
-- **macOS Tahoe 26.4.** That's what I build and test on; it likely runs on earlier 26.x, but I haven't tested it there. On macOS 15 Sequoia? [valentine](https://github.com/valentine) maintains a [backport fork](https://github.com/valentine/adrafinil).
-- **Xcode 26+** to build, with Swift 6 strict concurrency enabled.
-- Admin rights for the standard install (the privileged helper installs via `SMAppService`). A non-admin install path drops the CLI in `~/.local/bin` instead of `/usr/local/bin`.
-
-## Download
-
-**[Download Adrafinil](https://github.com/kageroumado/adrafinil/releases/latest)** — a signed, notarized disk image. Open it, drag **Adrafinil** to Applications, and launch. The first launch asks for admin rights once to register the privileged helper. Requires macOS 26.4 or later.
-
-Or via Homebrew: `brew install --cask adrafinil` — the same DMG, straight from the official
-[Homebrew cask](https://formulae.brew.sh/cask/adrafinil).
-
-Prefer to build it yourself? See [Building](#building).
-
-## Building
+After installing a correctly signed app and approving its services:
 
 ```sh
-git clone https://github.com/kageroumado/adrafinil.git
-cd adrafinil
-open Adrafinil.xcodeproj
+wakelease run -- npm run build
+wakelease watch --pid 12345
+wakelease hold --for 2h --source download --reason "large download"
+
+wakelease acquire build:42 --source build --ttl 7200
+wakelease wait build:42 --reason "waiting for approval"
+wakelease acquire build:42 --source build
+wakelease release build:42
+
+wakelease status
+wakelease doctor
 ```
 
-In Xcode, select the **Adrafinil** scheme and Run. You'll need to set a development team for code
-signing — the daemon (LaunchAgent) and helper (LaunchDaemon) are embedded into the app bundle and
-registered with the system when the app launches. (No Team ID is baked into the source; the XPC
-caller check reads your *own* signing team at runtime, so a rebuild under any Developer ID
-authorizes its own components without code changes.)
+`run` passes a literal argument vector—no shell interpolation—and preserves stdin, terminal behavior, signals, and the child's exit status. It refuses to start the command if production wake protection is unconfirmed. A watched process is not killed when its watcher is cancelled.
 
-For a headless compile check without local signing identities:
+`hold` prints its generated key. Release that key early when the work finishes. `release --all` clears current leases but permits new work; `pause` blocks new leases until `resume`.
+
+## Agent integrations
+
+The daemon understands generic leases, not agent brands. Tool knowledge lives in adapters and installers.
 
 ```sh
-xcodebuild -project Adrafinil.xcodeproj -scheme Adrafinil -configuration Debug \
-  -destination 'generic/platform=macOS' \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+wakelease integrations
+wakelease integrations preview claude-code
+wakelease integrations install claude-code --yes
+wakelease hooks generate --source my-tool --session-variable JOB_ID
 ```
 
-The shared logic builds and tests standalone as a Swift package:
+Built-in formats cover Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Pi, and an experimental Cline VS Code hook convention. Aider uses an explicit command wrapper; Hermes has a manual YAML recipe. Configured does **not** mean live-agent-certified. Codex requires its own hook approval; Pi requires `agent_settled`. See the [capability matrix and primary evidence](Docs/INTEGRATIONS.md).
+
+Installers preview intended changes, retain private backups, preserve foreign settings, and refuse symlinks or unowned/modified plugins. No shell startup file is edited automatically. An optional local stdio MCP server is available; there is no IP listener or cloud account.
+
+## Requirements and build status
+
+- Runtime/build deployment floor: **macOS 15.4**. The retained isolated-deinitialization runtime is the reason for this floor; an older minimum would need a deliberate backport.
+- Swift **6.2 or newer**. Full Xcode is needed for the Xcode build/signing workflow. Command Line Tools can build the SwiftPM executables and development bundle.
+- Production power control requires an Apple-issued team signature and user-approved ServiceManagement registration. The root helper is not usable through an unsigned fallback.
+- Automated verification was run on Apple Silicon, macOS 26.6.2, with Apple Swift 6.3.3. This is not a claim of physical certification on every supported OS or architecture.
+
+### Safe development loop
+
+These commands build and test without installing services or changing power settings:
 
 ```sh
-cd AdrafinilShared
-swift test
+WAKELEASE_SOURCE_TESTING=1 swift test --scratch-path .build/source-testing \
+  --disable-xctest --disable-experimental-prebuilts
+python3 Tests/cli_integration.py
+python3 Tests/ui_smoke.py
+python3 Tests/package_smoke.py
+python3 Scripts/lint.py
 ```
 
-## How it works
+The source-testing opt-in pins Swift Testing 6.2.4 and SwiftSyntax 602.0.0 for tests only. They are not runtime dependencies. UI smoke tests require a logged-in macOS desktop.
 
-Agents don't talk to Adrafinil directly. Each agent's hook system calls the bundled CLI:
+To experiment with the API, launch `.build/source-testing/debug/WakeLeaseDaemon --simulate --state-dir <private-directory>` and point the CLI at the same absolute directory with `WAKELEASE_STATE_DIR`. **Simulation holds no power assertions and changes no macOS power setting.**
+
+Build a development app bundle:
 
 ```sh
-adrafinil acquire <session-key> --tool claude-code --reason "long build"   # when a turn starts
-adrafinil release <session-key>                                            # when the agent goes idle
+python3 Scripts/build-app.py --configuration debug \
+  --bin-dir .build/source-testing/debug --output .build/WakeLease-dev.app
 ```
 
-Holds are **activity-scoped**, not session-scoped: Claude Code acquires on `UserPromptSubmit` and
-releases on `Stop`, so the Mac is only kept awake while the agent is actually working — an
-open-but-idle session at the prompt lets it sleep normally.
+That shortcut is ad-hoc-signed and deliberately cannot operate privileged services. For source-built, team-signed packages and notarization, use the [release procedure](Docs/RELEASING.md). The internal Xcode project/scheme still uses the upstream name to preserve history; it now builds WakeLease products and the new `WakeLeaseApp` sources.
 
-The daemon refcounts by session key and asks the helper to block sleep while the count is non-zero.
+## Sleep safety
 
-An agent can also keep the Mac awake for a background task that outlives its reply (a long build or
-deploy) with a time-boxed **hold** — either by calling `adrafinil hold` directly or, for MCP-capable
-agents, through the bundled MCP tool that `adrafinil mcp` serves:
+Ordinary idle assertions do not guarantee closed-lid execution. WakeLease retains Adrafinil's two mechanisms: an IOPM idle assertion plus the machine-global `pmset -a disablesleep` override. The latter can survive a crash or reboot if it is not cleared.
+
+The helper has startup/shutdown cleanup, bounded subprocesses, read-back verification, failed-clear retries, and renewable per-user claims with disconnect and wedged-daemon deadlines. These reduce risk; they do not make failures impossible. Do not run competing closed-lid utilities. **Never put an actively computing Mac in a sealed or unventilated bag.** SMC temperatures are supplementary, hardware-dependent readings—not a stable public thermometer or thermal guarantee.
+
+Read [recovery instructions](Docs/RECOVERY.md) before testing physical sleep behavior. `doctor` is read-only: it never installs services, changes power settings, or puts the Mac to sleep.
+
+## Uninstall
 
 ```sh
-adrafinil hold --for 30m --reason "deploy"   # keep awake up to 30 min, then auto-release
-adrafinil mcp                                 # speak the Model Context Protocol on stdio (for agents)
+wakelease uninstall --dry-run
+wakelease uninstall --yes
 ```
 
-You don't need an agent at all: the menu bar's **Keep awake** button places the same kind of
-time-boxed hold by hand — for a long download or any off-agent task — and **Let it sleep** releases
-everything. So Adrafinil covers all three: it auto-detects agent activity through hooks, lets agents
-drive it explicitly over MCP/CLI, and can be flipped on manually when you need it.
+Uninstall first pauses admission and requires confirmed cleanup before removing recovery services. It then removes recorded integrations and its receipt-owned CLI link. Modified or foreign content is preserved and reported. `--purge` additionally removes known local preferences, logs, and backups; `--remove-app` moves the app to Trash. The native settings window offers the same explicit choices. See [installation and removal](Docs/INSTALLATION.md).
 
-Other subcommands: `status`, `install-hooks`, `uninstall-hooks`, `daemon-status`, `version`.
+## Documentation
 
-### Add your own agent
+- [Architecture and inherited platform lessons](Docs/ARCHITECTURE.md)
+- [Local lease protocol](Docs/LEASE_PROTOCOL.md)
+- [CLI reference](Docs/CLI.md)
+- [Integration capabilities](Docs/INTEGRATIONS.md)
+- [Threat model](Docs/THREAT_MODEL.md) and [security reporting](SECURITY.md)
+- [Tests and outstanding hardware gates](Docs/TESTING.md)
+- [Contributing](CONTRIBUTING.md)
 
-Adrafinil ships integrations for the common agents, but the CLI works for **any** tool — the daemon
-accepts an arbitrary `--tool` label from any same-user caller, so nothing needs to change to wire up
-one Adrafinil has never heard of. Settings → **Agents** → *Add your own agent* generates the exact
-snippets from a name you type; pick the shape that matches your agent:
-
-- **It has hooks / events** — add `acquire` on start and `release` on stop, keyed on your agent's
-  session id so each turn brackets cleanly:
-
-  ```sh
-  adrafinil acquire "$SESSION_ID" --tool my-agent   # on start / prompt submit
-  adrafinil release "$SESSION_ID" --tool my-agent   # on stop / finish
-  ```
-
-- **It has no hooks** — wrap the command so the hold spans the whole run (keyed on the shell's `$$`),
-  or drop a single timed hold for a background job:
-
-  ```sh
-  adrafinil acquire $$ --tool my-agent && my-agent "$@"; adrafinil release $$ --tool my-agent
-  adrafinil hold --for 2h --pid $$ --reason "my-agent session"
-  ```
-
-Custom agents aren't auto-detected or process-watched, so pair every `acquire` with a reliable
-`release` — the idle-release timeout and each hold's time limit are the safety net if one is missed.
-
-## Architecture
-
-Four products across three privilege tiers (full detail, including the Xcode project layout, in
-[Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md)):
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Adrafinil.app   (menu bar app, user-facing)                 │
-│  • Status item, settings, installer GUI, lid-open summary    │
-└─────────────────────────────┬────────────────────────────────┘
-                              │ XPC
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│  AdrafinilDaemon  (LaunchAgent, runs as user, always-on)     │
-│  • Reference-counted assertion registry                      │
-│  • Process watchers (kqueue NOTE_EXIT + periodic sweep)      │
-│  • Thermal monitor (SMC)  • Lid-state monitor (IORegistry)   │
-│  • Lid-close chime  • CLI socket at …/Adrafinil/cli.sock     │
-└─────────────────────────────┬────────────────────────────────┘
-                              │ XPC (privileged Mach service)
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│  AdrafinilHelper  (SMAppService LaunchDaemon, root)          │
-│  • The ONLY component that touches sleep-blocking APIs       │
-│  • setSleepBlocked(Bool) + read-only state/version           │
-│  • Verifies caller's code-signing requirement                │
-└──────────────────────────────────────────────────────────────┘
-
-  adrafinil  (CLI, ships inside the .app, symlinked onto PATH)
-  • acquire / release / hold / mcp / status / install-hooks / uninstall-hooks
-  • Connects to the daemon socket; <50ms round-trip
-```
-
-- **`AdrafinilShared`** — a Swift package shared across every target: data models (`AgentKind`, `Assertion`), the IPC wire formats, `AssertionRegistry`, `CallerVerifier`, the hook-install specs, and the CLI argument parser. This is where the unit tests live.
-- **Helper stays trivial to audit.** It holds no policy — ref counting, thermal, idle, and lid logic all live in the daemon. The privileged surface is a single mutating endpoint plus read-only introspection.
-- **Daemon is the source of truth.** The app is a pure view layer; it can quit and relaunch freely without affecting held assertions.
-
-## Quirks worth knowing
-
-- **Public IOPM assertions don't beat clamshell sleep.** `IOPMAssertionCreateWithName` with the public types (and therefore `caffeinate`) will not keep a lid-closed Mac awake. Adrafinil's v1 uses `pmset disablesleep 1`, which is blunt (it also disables idle sleep) and *must* be cleared on shutdown or it leaks — the helper resets to `disablesleep 0` on respawn before re-applying state.
-- **Daemon handlers run on arbitrary queues.** XPC and socket callbacks can arrive on any dispatch queue, so the assertion registry and shared state are synchronized accordingly. Tread carefully around concurrency when modifying the daemon.
-- **The CLI is on a latency budget.** `acquire`/`release` are in the hot path of every agent session, hence static lookups (e.g. `AgentKind.allBinaryNames`) and a thin socket protocol instead of full XPC for the CLI ↔ daemon hop.
-
-## License
-
-[MIT](LICENSE). Do whatever you want, no warranty.
-
-## Acknowledgements
-
-Built by [@kageroumado](https://x.com/kageroumado), dispensed at [kagerou.glass](https://kagerou.glass).
-The name is a nod to [adrafinil](https://en.wikipedia.org/wiki/Adrafinil) — a wakefulness-promoting
-prodrug — because the app keeps your machine awake only when it actually has work to do.
+WakeLease has no telemetry, automatic update feed, or normal-operation network dependency. A public repository, security contact, signing identity, notarization account, and release channel must be designated by the maintainer before publication.

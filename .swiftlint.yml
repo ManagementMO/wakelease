@@ -1,6 +1,7 @@
 # Lint only first-party sources; never the build output, SPM checkouts, or generated files.
 included:
   - Adrafinil
+  - WakeLeaseApp
   - AdrafinilCLI
   - AdrafinilDaemon
   - AdrafinilHelper

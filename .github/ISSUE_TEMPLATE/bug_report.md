@@ -1,9 +1,9 @@
 ---
 name: Bug report
-about: Report a problem with Adrafinil (Mac won't sleep, sleeps mid-work, a hook not firing, etc.)
+about: Report a problem with WakeLease (Mac won't sleep, sleeps mid-work, a hook not firing, etc.)
 title: ""
 labels: ""
-assignees: kageroumado
+assignees: ""
 ---
 
 ## Summary
@@ -12,7 +12,7 @@ assignees: kageroumado
 
 ## Environment
 
-- **Adrafinil**: <!-- e.g. 1.4.0 (menu bar → About, or the GitHub Release) -->
+- **WakeLease**: <!-- e.g. 1.4.0 (menu bar → About, or the GitHub Release) -->
 - **macOS**: <!-- e.g. 26.1 (Build 25B?) -->
 - **Hardware**: <!-- e.g. M4 MacBook Air; on battery / on AC; lid open / clamshell -->
 - **Agent(s)**: <!-- which agent hooks are connected — Claude Code / Codex / Cursor / Gemini / Aider / a custom "Add your own agent" — and its version -->
@@ -35,10 +35,10 @@ assignees: kageroumado
 
 After reproducing, capture:
 
-- **`adrafinil status`** — shows the active holds/assertions and whether the daemon helper is connected:
+- **`wakelease status`** — shows the active holds/assertions and whether the daemon helper is connected:
 
   ```sh
-  adrafinil status
+  wakelease status
   ```
 
 - **Which hooks are installed** — Settings → Agents in the app, or the agent's own config:
@@ -47,14 +47,14 @@ After reproducing, capture:
 
 ## Log excerpt
 
-Adrafinil logs to the unified log. Capture the window around the problem:
+WakeLease logs to the unified log. Capture the window around the problem:
 
 ```sh
-log show --last 15m --predicate 'subsystem BEGINSWITH "glass.kagerou.adrafinil"' --style compact
+log show --last 15m --predicate 'subsystem BEGINSWITH "org.wakelease"' --style compact
 ```
 
-This records hold acquire/release (per-turn, sub-agent, background-shell), idle-release, TTL/dead-process reaping, and cutouts.
+Include only a sanitized excerpt. Lease events are local under the private state directory; do not attach whole hook configurations, prompts, transcripts, keys, or lease reasons. There is no enabled CPU-idle sniffer in the new runtime.
 
 ## Recovery note
 
-If the Mac won't sleep and you need it to now, **quit Adrafinil from the menu bar** — that drops every hold. If hooks seem to have drifted, reconnect the agent in **Settings → Agents** (re-installs its hooks); for Codex, re-trust them with `/hooks`.
+Use **Allow Sleep Now** or `wakelease pause` to deliberately release work and block new leases. Quitting only the menu bar does not stop the daemon. Run `wakelease doctor` and consult `Docs/RECOVERY.md` if cleanup is unconfirmed. Do not delete recovery services or publish raw configuration. Label evidence as simulation, signed-peer testing, or actual physical behavior.

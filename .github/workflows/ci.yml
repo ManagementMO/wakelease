@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -11,37 +15,58 @@ concurrency:
 
 jobs:
   lint:
-    name: Swift (format + lint)
+    name: Swift format and lint
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
-      - run: brew install swiftformat swiftlint
-      - name: SwiftFormat (check only)
-        run: swiftformat --lint .
-      - name: SwiftLint
-        run: swiftlint lint --quiet
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Check with pinned tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/lint.py
 
   test:
-    name: Shared package tests
+    name: Core, transport, CLI and package safety
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
-      - name: Run AdrafinilShared unit tests
-        run: swift test --package-path AdrafinilShared
+      - name: Swift invariants and fake controllers
+        env:
+          WAKELEASE_SOURCE_TESTING: "1"
+        run: swift test --scratch-path .build/source-testing --disable-xctest --disable-experimental-prebuilts
+      - name: Command and simulation daemon integration
+        run: python3 Tests/cli_integration.py
+      - name: Disposable ad-hoc bundle and privileged-mode refusal
+        env:
+          WAKELEASE_HEADLESS: "1"
+        run: python3 Tests/package_smoke.py
+      - name: Universal development package
+        run: python3 Scripts/build-app.py --configuration release --sign - --arch arm64 --arch x86_64 --output .build/universal/WakeLease.app --zip
+      - name: Strict C syntax
+        run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c
+      - name: Release-tool argument safety
+        run: python3 Tests/release_tools.py
+      - name: Repository and documentation checks
+        run: python3 Scripts/check-repository.py
 
   build:
-    name: App build (headless, unsigned)
+    name: Full Xcode app build, unsigned
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Select latest Xcode
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
       # Compile-only check — no signing identities on CI. The daemon/helper/CLI are embedded in the
       # app target, so building the Adrafinil scheme covers all four products.
-      - name: Build Adrafinil (compile check)
+      - name: Build WakeLease products
         run: |
           xcodebuild -project Adrafinil.xcodeproj -scheme Adrafinil -configuration Debug \
-            -destination 'generic/platform=macOS' \
+            -destination 'generic/platform=macOS' -derivedDataPath .build/xcode \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
+      - name: Retain unsigned compile artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WakeLease-unsigned-compile-only
+          path: .build/xcode/Build/Products/Debug/WakeLease.app
+          retention-days: 7

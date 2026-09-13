@@ -1,36 +1,33 @@
-# Security Policy
+# WakeLease security policy
 
-Adrafinil ships a **root LaunchDaemon** (`AdrafinilHelper`) — the one component that can change
-system sleep behavior. We take its surface seriously and welcome reports.
+WakeLease includes a root LaunchDaemon that changes machine-global sleep behavior. A stranded sleep override is security-relevant, not just an inconvenience. This is a pre-release derivative of Adrafinil; see [UPSTREAM.md](UPSTREAM.md).
 
-## Reporting a vulnerability
+## Reporting
 
-Please report security issues **privately**, not as public GitHub issues:
+A WakeLease public repository and private security contact have **not yet been designated**. A public release is blocked until the maintainer enables private vulnerability reporting or publishes a monitored private contact.
 
-- Use GitHub's [private vulnerability reporting](https://github.com/kageroumado/adrafinil/security/advisories/new)
-  (Security → Advisories → "Report a vulnerability"), or
-- Reach out to [@kageroumado](https://x.com/kageroumado).
+For an engineering build, contact its distributor through the private channel used to obtain it. Do not publish exploit details, user configuration, prompts, transcripts, tokens, or private logs in an issue. Do not send WakeLease-only reports to Adrafinil's maintainer as though the projects were the same product. If a minimal reproducer also affects unmodified upstream, coordinate an appropriately scoped upstream report.
 
-Please include a description, affected version, and reproduction steps. We aim to acknowledge within
-a few days. Once a fix ships, we're happy to credit you (or keep you anonymous — your call).
+Include the build commit/version, macOS version, architecture, sanitized doctor findings, expected/actual behavior, and a safe reproducer. State whether a result came from fixtures, simulation, a signed build, or physical hardware. No response-time commitment is claimed before a reporting team exists.
 
-## Scope — what matters most
+## Important boundaries
 
-The privileged surface is intentionally tiny. The highest-value targets:
+- Only the exact Apple-anchored, team-matching daemon role may call the helper. There is no unsigned production fallback.
+- The helper accepts fixed mechanical operations, not commands, paths, environment variables, or arbitrary privileged arguments.
+- The user-only socket checks kernel peer credentials. Process ownership includes UID and birth identity, not just a reusable PID.
+- Finite lifetimes, waiting semantics, stale-event barriers, capacity bounds, and cutout latches limit abandoned or replayed work.
+- Cleanup failure is observable and retried. Connected-but-wedged daemon claims expire independently of XPC disconnect.
+- Configuration writers preserve foreign entries and require ownership receipts for plugin/CLI removal.
+- No telemetry, cloud account, or automatic update feed operates in the runtime.
 
-- **`AdrafinilHelper` (root LaunchDaemon).** Its only mutating endpoint is `setSleepBlocked(Bool)`,
-  plus read-only state/version. It holds no policy. Every incoming XPC peer is checked by
-  `CallerVerifier` (`AdrafinilShared/Sources/AdrafinilShared/IPC/CallerVerifier.swift`): the caller
-  must be a signed Adrafinil component sharing our Team Identifier. Bypasses of that check, or any way
-  to drive `pmset disablesleep` from an unauthorized caller, are the most serious class of bug.
-- **`AdrafinilDaemon` (LaunchAgent, runs as your user).** Holds the assertion registry and all policy.
-  Its CLI socket lives at `~/Library/Application Support/Adrafinil/cli.sock` (mode `0600`).
-- **The `adrafinil` CLI.** Reachable from agent hooks; takes a session key and tool name.
+The full [threat model](Docs/THREAT_MODEL.md) includes remaining risks. Same-user malware can already edit that user's files and invoke the intentionally open bounded lease API. Root compromise is outside the model.
 
-A failure that leaves the Mac **permanently awake** (a leaked `pmset disablesleep 1`) is treated as a
-security-relevant bug, not just a nuisance — the helper resets `disablesleep` to `0` on every respawn
-specifically to bound that risk.
+## Safety and recovery
 
-## Supported versions
+Never run physical sleep tests on critical work or a Mac in an enclosed bag. Do not run competing `disablesleep` utilities. `doctor` is read-only, and a successful build or IOPM call is not closed-lid certification. Read [RECOVERY.md](Docs/RECOVERY.md) before testing.
 
-Only the latest release and `main` receive fixes.
+Do not remove the helper/launch registration while a persistent override is unconfirmed. The supported uninstaller pauses admission and requires confirmed cleanup first. If cleanup cannot be confirmed, it stops and retains recovery mechanisms.
+
+## Supported builds
+
+There is no certified public release yet. Maintainers should reproduce defects on the current engineering branch and isolate inherited fixes where possible. Signing, service approval, in-place upgrade, clean removal and physical recovery must be validated before declaring a supported release.

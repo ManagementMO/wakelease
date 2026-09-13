@@ -33,6 +33,10 @@ The [valentine/adrafinil Sequoia backport](https://github.com/valentine/adrafini
 
 [Decaf](https://github.com/grishahq/decaf) was examined for completion-triggered sleep and failsafe ideas. No Decaf code is incorporated. Its sudoers installation and shared `/tmp` state are not adopted.
 
+## Naming and adjacent projects
+
+A September 13, 2026 check found no exact WakeLease GitHub repository and no Homebrew formula/cask at that name. Fuchsia already uses `WakeLease` as an API type, so the term is not unique. [Lumos](https://github.com/lovstudio/lumos) is an adjacent macOS utility with its own wake-lease and experimental clamshell work; its README was reviewed during the naming check. No Lumos code or artwork is incorporated. The recommendation is to retain **WakeLease for macOS** provisionally, not to claim trademark clearance or invention of the category. Recheck naming and designate a public repository before release.
+
 ## Maintaining lineage
 
 Fetch `upstream` and review releases before porting changes. Preserve upstream authorship when cherry-picking. For a new bug, first write a reproducer and regression test; isolate an upstreamable fix when practical. Do not automatically open an upstream issue or pull request, or publish a derivative, without the maintainer's authorization.

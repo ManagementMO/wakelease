@@ -1,358 +1,115 @@
-# Adrafinil — Architecture
+# WakeLease architecture
 
-> How Adrafinil is built — runtime components, the sleep-blocking mechanism, detection, the assertion lifecycle, and the Xcode project layout. For the user-facing pitch and feature list, see the [README](../README.md).
+WakeLease derives from Adrafinil v1.7.0. Read [UPSTREAM.md](../UPSTREAM.md) for the exact baseline and attribution. Historical source paths and the internal `AdrafinilShared` module are retained to make upstream comparisons practical; the shipped UI and identities are WakeLease-specific.
 
-Adrafinil prevents system sleep — including clamshell (lid-closed) sleep — only while an AI coding agent has an active session. This document describes the runtime components, the sleep-blocking mechanism, how agent activity is detected, and the assertion lifecycle and safety cutouts.
+## Components and authority
 
----
+```text
+agent hook / job / custom producer
+              |
+       wakelease CLI or local MCP
+              |
+       private Unix-domain socket
+              |
+WakeLeaseDaemon — user LaunchAgent
+  LeaseBroker actor -> LeaseBook value state
+  ownership, deadlines, waiting, admission, cutouts
+  serialized LeasePowerReconciler
+              |
+       exact-role, team-pinned XPC
+              |
+WakeLeaseHelper — root LaunchDaemon
+  per-user mechanical demand ledger
+  one process-wide SleepBlocker
+  fixed IOPM / pmset operations
 
-## 1. Components
-
-Three runtime components plus a CLI, across three privilege tiers:
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  Adrafinil.app  (menu bar app, user-facing)                        │
-│  • Status item, settings window, installer GUI, lid-open summary   │
-│  • Talks to the daemon over XPC; a pure view layer                 │
-└───────────────────────┬────────────────────────────────────────────┘
-                        │ XPC (NSXPCConnection)
-                        ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  AdrafinilDaemon  (LaunchAgent, runs as user, always-on)           │
-│  • Reference-counted assertion registry                            │
-│  • Process watchers (kqueue NOTE_EXIT + periodic sweep)            │
-│  • Thermal monitor (SMC)  • Lid-state monitor (IORegistry)         │
-│  • Low-battery monitor    • Lid-close chime  • wake re-assertion   │
-│  • Listens on ~/Library/Application Support/Adrafinil/cli.sock     │
-└───────────────────────┬────────────────────────────────────────────┘
-                        │ XPC (privileged Mach service)
-                        ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  AdrafinilHelper  (SMAppService LaunchDaemon, root)                │
-│  • The ONLY component that touches sleep-blocking APIs             │
-│  • setSleepBlocked(Bool) + sleepBlockedState/version (read-only)   │
-│  • Authorizes callers via a code-signing requirement check        │
-└────────────────────────────────────────────────────────────────────┘
-
-  adrafinil  (CLI, ships inside the .app, symlinked onto PATH)
-  • acquire / release / status / install-hooks / uninstall-hooks /
-    daemon-status / version  • connects to the daemon socket; <50ms round-trip
+WakeLease.app — native menu bar and settings
+  reads the same local API; owns no lease registry
+  explicit service registration and uninstall controls
 ```
 
-Bundle identifiers: app `glass.kagerou.adrafinil`, daemon `…​.daemon`, helper `…​.helper`, CLI `…​.cli` (ships as the lowercase `adrafinil` binary).
+The app may quit while work continues. The CLI does not register or escalate a helper implicitly. Production daemon startup requires a team signature, a non-root user, and the standard state directory. Unsigned development is explicitly simulation-only.
 
-### Why three tiers
+The helper accepts an exact daemon signing role, an Apple anchor, and the matching team. The daemon pins the helper's role/team, verifies a root peer, and checks the helper version before setting demand. The helper accepts no executable, shell fragment, path, environment, or arbitrary `pmset` argument from an IPC caller.
 
-- **The helper must be privileged** to call sleep-blocking APIs, so it's kept tiny and audited: one mutating endpoint (`setSleepBlocked(Bool)`) plus read-only introspection. It holds **no** policy.
-- **The daemon runs as the user** so it can watch user-owned processes, write logs under `~/Library/Application Support`, and receive per-user lid notifications. It's always-on (not just when the app is open) so agents can call `adrafinil acquire` even with no menu bar app running. **All policy lives here** — ref counting, thermal, idle, lid, battery.
-- **The app is user-facing** and may quit/relaunch freely; keeping state in the daemon makes it a pure view layer.
+## Generic lease core
 
----
+`LeaseBook` is the deterministic state machine. `LeaseBroker` is its actor-owned concurrency boundary. A lease has an opaque UUID, client-chosen work key, source label/kind, wake class, lifecycle state, finite deadline, optional process birth identity, and optional parent relationship.
 
-## 2. Sleep-blocking mechanism
+- Effective leases derive system/display demand; counters are not independently incremented/decremented globals.
+- Display demand also requires system wake. Display and system requirements are reconciled independently.
+- A duplicate acquire refreshes the existing work unit without multiplying its reference count.
+- Release is idempotent. Releasing a parent never cascades into children.
+- Process ownership is PID + UID + kernel start time. Dead/reused identities cannot be renewed or restored.
+- Deadlines use `mach_continuous_time`, including time asleep. Wall-clock changes cannot extend a lease.
+- Waiting defaults to a ten-minute grace, bounded by the lease's own deadline. A heartbeat cannot restart grace; acquire resumes work.
+- Lowering lifetime limits bounds existing leases. Changing waiting policy recomputes existing waits from their original start.
+- Per-key revisions, terminal records, and persisted global control ordering reject stale lifecycle operations. Capacity limits fail closed rather than forgetting recent replay barriers.
 
-`IOPMAssertionCreateWithName` with the public assertion types (and therefore `caffeinate`) does **not** override clamshell sleep — its own header says "the system may still sleep for lid close." So two mechanisms compose, both held by the helper:
+Agent-specific IDs, events, payload parsing, and hook configuration are outside the broker. There is no enabled whole-system process sniffer or CPU-idle guess in the new runtime. Long-lived applications at a prompt do not automatically mean useful work.
 
-1. **Idle system sleep** (lid open) — a standard reference-counted `IOPMAssertion` (`kIOPMAssertPreventUserIdleSystemSleep`). The kernel auto-releases it if the helper dies. Visible in `pmset -g assertions`.
-2. **Clamshell (lid-closed) sleep** — the global `SleepDisabled` power setting, applied by shelling out to `pmset -a disablesleep 1`.
+## Why two power mechanisms remain
 
-> **Empirical note (macOS 26.3, real-device tested).** Three cleaner in-process mechanisms were each tried and **none** keep a displayless lid-closed Mac awake:
-> - Private `RootDomainUserClient` selector 12 (`setClamShellSleepDisable`) — returns success, Mac **still sleeps** (it governs the external-display "clamshell mode" path, not no-display lid-close).
-> - Public `IORegistryEntrySetCFProperty(IOPMrootDomain, "SleepDisabled", …)` — `kIOReturnNotPermitted` even as root.
-> - `IOPMSetSystemPowerSetting("SleepDisabled", …)` — the per-key call `pmset`'s disablesleep path makes; called alone it returns success but `pmset -g` still shows `SleepDisabled 0` and the Mac sleeps. `pmset` coordinates `IOPMSetPMPreferences` + activation around it, which the single call doesn't reproduce.
->
-> Only the full `pmset -a disablesleep 1` was verified to keep the Mac awake (lid closed, no external display, on battery). It is blunt — global, also suppresses idle sleep, persists in the power-management prefs until cleared — but it is the path that works, and it's Apple's own tested implementation. It runs only on block-state flips, so the subprocess cost is negligible.
+An ordinary `kIOPMAssertPreventUserIdleSystemSleep` assertion prevents idle sleep, not every sleep cause. Apple's API does not promise lid-close protection. WakeLease retains the upstream composition:
 
-`disablesleep` is **not** cleared on crash and can reset across a sleep/wake cycle. Several layers make sure it can never be stranded:
+1. An IOPM idle-system assertion, released by the kernel if the helper dies.
+2. The machine-global `SleepDisabled` preference through the fixed argument vector `/usr/bin/pmset -a disablesleep 1` or `0`.
 
-- the helper clears it on release, on startup (crash recovery; `RunAtLoad` so this runs at boot, before any login), and on **SIGTERM** (machine shutdown / unregister);
-- the daemon clears it on its own SIGTERM (`launchctl bootout`, logout) with a bounded wait;
-- the helper has a **dead-man switch**: if the last daemon connection drops while blocked and none returns within 60 s (daemon SIGKILLed at logout), it clears the block itself;
-- while blocking, the daemon **re-pushes the blocked state every 60 s** (the helper's `set(true)` re-runs the full mechanism), healing a failed `pmset`, a raced helper relaunch, or a kernel reset that the wake notification missed;
-- `pmset` itself runs under a 10 s watchdog so a wedged invocation can't deadlock the helper's policy lock.
+Upstream reported physical tests on macOS 26.3 where private RootDomain selector 12 returned success without preventing displayless lid-close sleep, direct registry writes failed, and `IOPMSetSystemPowerSetting` alone did not reproduce `pmset`'s preference activation. That is **upstream evidence**, not a WakeLease hardware result. Replacing this mechanism requires physical evidence, not merely a successful API return.
 
-**Failure mode**: if the helper crashes while sleep is blocked, the daemon detects it (XPC invalidation) and respawns it; on respawn the helper clears any stale `disablesleep` before re-applying the current state. Worst case: a brief window where sleep is allowed. Acceptable.
+`disablesleep` is persistent and can also be reset by system transitions. Do not run another utility that writes it concurrently. There is no transactional ownership API for this global preference.
 
----
+## Serialized application and recovery
 
-## 3. Detection — how the daemon knows agents are active
+`LeasePowerReconciler` is the single asynchronous power writer. It records desired and last-confirmed applied state separately. Versioned intents reject old generations. Acquisition during a cue cancels the queued clear; acquisition while an unblock is already in flight is reconciled again to the latest demand. A failed clear is reported and remains retryable even with zero leases.
 
-### 3.1 Primary: hooks
+The pre-sleep cue is optional. The final sleep request requires a known closed lid, known absence of external displays, no remaining helper-global claim, no conflicting public assertions, and a still-current zero-demand state. Unknown conditions do not cause forced sleep. Open-lid final release restores ordinary sleep; it is not an unconditional sleep command.
 
-The daemon doesn't detect agents directly. Each agent's hook system calls the CLI:
+`DisplayHold` releases both the display assertion and its auxiliary user-activity assertion. Failed assertion releases retain their IDs for retry rather than pretending to be gone.
 
-```sh
-adrafinil acquire <session-key> --tool <tool> [--reason <text>] [--ttl <seconds>]   # on session start
-adrafinil release <session-key>                                                     # on session end
+The helper serializes all mechanical state on one queue. Per-user claims aggregate with OR semantics so one user disconnecting cannot clear another user's live claim. Replaced-connection callbacks cannot retire a newer connection. Claims expire after 90 seconds without a set request, even if XPC remains connected; disconnect grace is 60 seconds. False/expired claims cannot pin the machine awake.
+
+Root subprocesses have fixed executable/arguments, a sanitized environment, bounded output and timeouts. Children are killed/reaped on timeout and stay in launchd's process group. An unreapable mutating child causes helper exit for supervisor cleanup rather than allowing a newer writer to race an old `pmset` operation. Clearing is followed by state read-back. Startup cleanup failure stays observable and retryable.
+
+The daemon closes admission before shutdown, stops the socket, clears its demand, and disconnects. The helper's independent deadlines and launchd startup cleanup remain backstops if daemon teardown fails. These mechanisms are not a guarantee against every kernel, hardware, supervisor, or power failure.
+
+## Safety scheduling
+
+Safety admission and lease mutation are checked together in the broker. Cutout latches persist across daemon restarts and cannot be overridden by another acquire. The provider uses optional fresh SMC readings plus macOS's public thermal state; missing readings do not masquerade as a fresh temperature.
+
+Defaults: closed-lid battery cutoff 20% on battery, temperature cutoff 80 °C, and public serious/critical thermal states. Configurable thresholds remain bounded. Recovery uses hysteresis and repeated cooling observations; a missing sensor cannot clear a temperature-dependent latch. Each user daemon retires its own claims; the helper aggregates demand rather than choosing application safety policy for all users.
+
+Maintenance arms the earliest relevant deadline. Incoming traffic cannot keep postponing expiry or recovery. Active closed-lid work checks at up to 15-second intervals; other live/cutout state at up to 30 seconds, or sooner for an actual lease deadline. No lease/cutout means that maintenance loop is disarmed. Wake and device notifications trigger reconciliation.
+
+## IPC, persistence, and privacy
+
+The versioned framed JSON contract is in [LEASE_PROTOCOL.md](LEASE_PROTOCOL.md). Both ends validate kernel UID/PID credentials. State lives under `~/Library/Application Support/WakeLease`, owned by the user and mode `0700`; the socket is `0600`. Descriptor-relative operations reject symlinks/hard-link surprises. Only macOS's known root path aliases are mapped to `/private`.
+
+- `leases.json`: private recoverable registry, pause/control state and safety latches.
+- `config.json`: versioned preferences, normalized within bounds.
+- `events.log`: bounded local operational events using opaque lease UUIDs.
+- `integrations/`: ownership receipts and private original-file backups.
+- `cli-install.json`: exact ownership of the optional `~/.local/bin/wakelease` symlink.
+
+Recovery validates boot identity, finite lifetimes, and owner identity before applying current policy. Corrupt registry/preferences are surfaced and admission is paused. Persistence is not the public protocol.
+
+Reasons and keys are local user-visible data, not operational log fields. Do not put credentials, prompts, transcripts, repository paths or command contents in metadata. There is no telemetry or automatic update service. Same-user processes intentionally share a bounded lease API; this is not a sandbox against malware already controlling the account.
+
+## Native UI and package layout
+
+The new SwiftUI sources are in `WakeLeaseApp/`. Native controls expose leases, waiting, pause/release, settings, service status, and integration change previews. The UI distinguishes requested demand from confirmed protection. Its menu insertion binding ignores unchanged preference writes; a rendered-preview regression caught an otherwise unbounded SwiftUI menu-graph update loop.
+
+The original icon is a stacked lease token/key, with no medication imagery or upstream artwork. The reproducible generator is `Scripts/generate-icon.swift`.
+
+```text
+WakeLease.app/Contents/
+  MacOS/WakeLease
+  Helpers/wakelease
+  Library/LaunchAgents/{WakeLeaseDaemon,LaunchAgent.plist}
+  Library/LaunchDaemons/{WakeLeaseHelper,LaunchDaemon.plist}
+  Resources/{AppIcon.icns,LICENSE,UPSTREAM.md,WakeLeaseBuild.json}
 ```
 
-The daemon refcounts by session key. **Session id resolution**: the CLI prefers the `session_id` field from the JSON the hook receives on stdin (read by `CLIStdin`), and falls back to a positional arg from a shell env-var expansion. Every Claude-Code-style hook delivers the stdin JSON, so stdin is the reliable, agent-agnostic source — avoiding per-agent env-var naming pitfalls (Claude is `CLAUDE_CODE_SESSION_ID`, not `CLAUDE_SESSION_ID`; Codex exposes `CODEX_THREAD_ID` and documents only the stdin field).
+Separate `MacOS` and `Helpers` directories avoid a case-insensitive `WakeLease` / `wakelease` collision. The SwiftPM UI product is correspondingly named `WakeLeaseMenu`. The Xcode project/scheme names retain upstream history, but the app source group and product/build identifiers are new. Both build paths target macOS 15.4; complete concurrency checking and hardened-runtime settings are retained.
 
-Integrations live in `AdrafinilShared/.../Installer/Integrations/`, one file per agent, each conforming to `AgentIntegration` and delegating to a shared building block (`NestedJSONHookShape`, `FlatJSONHookShape`, `ShellWrapper`, or `FilePlugin`). Adding an agent is a single new file plus one line in the `AgentIntegrations` registry.
-
-### 3.2 Tier-1 agents (full hook support)
-
-These support shell-command hooks with a session-start and (mostly) a session-end event:
-
-| Tool | Config path | Start event | End event |
-|------|-------------|-------------|-----------|
-| Claude Code | `~/.claude/settings.json` | `UserPromptSubmit` + `SessionStart`[`clear`] | `Stop` + `Notification`[`idle_prompt`] + `SessionEnd` |
-| Codex | `~/.codex/hooks.json` | `UserPromptSubmit` | `Stop` |
-| Cursor | `~/.cursor/hooks.json` | `beforeSubmitPrompt` (`--ttl 3600`) | `stop` |
-| Gemini CLI | `~/.gemini/settings.json` | `SessionStart` | `SessionEnd` |
-
-Claude Code, Codex, and Gemini CLI share a nested JSON shape (`{"hooks": {event: [{"hooks": [{type, command}]}]}}`); Cursor uses a flatter shape (`{"command": …}` entries directly). Only Claude Code also exposes a real session-id env var; the others deliver the id only on stdin.
-
-**Claude Code holds are activity-scoped** (others are still session-scoped). It acquires on
-`UserPromptSubmit` (a turn begins) and releases on `Stop` (the agent finishes responding,
-`reason: 'completed'` in the query loop), so an open-but-idle session at the prompt holds nothing
-and the Mac can sleep — only an actively-working turn keeps it awake. An **Esc-interrupt** is the one
-turn-end that fires no `Stop` (the abort short-circuits it), and Claude Code has no interrupt hook.
-The reliable catch is the daemon's **CPU-idle sweep** (§4): an interrupted session's process tree
-drops to ~idle and the sweep releases it after the idle window. The `Notification`-matched-`idle_prompt`
-release hook is a best-effort fast-path (Claude's "waiting for input" notification is gated by
-version/focus/channel and often doesn't fire, so it isn't relied upon). The process-exit watcher
-(§3.4) covers a terminal closed mid-turn. A `SessionEnd` → release covers **in-process session
-retirement** (issue #19): `/clear`, in-REPL `/resume`/`/fork`, and clear-context plan approval all
-end session A and mint a new UUID in the same process — with no `Stop` for A on the plan-approval
-path — and `SessionEnd` fires exactly at that boundary carrying the retiring id, so the old hold is
-released instead of lingering as a phantom until the CPU-idle sweep. Its companion
-`SessionStart`[matcher `clear`] → acquire covers the post-clear plan run, whose first message
-bypasses `UserPromptSubmit`; other `SessionStart` sources stay unhooked (they land at an idle
-prompt, where holding would re-introduce the whole-session hold this integration moved away from).
-**Codex and Cursor are turn-scoped too** (verified events: Codex `UserPromptSubmit`/`Stop`,
-issue #2; Cursor `beforeSubmitPrompt`/`stop`, issue #15). Cursor's acquire additionally carries a
-`--ttl`: its holds attach to the single long-lived Cursor app process, which neither the process-exit
-watcher nor the CPU-idle sweep can catch (the app's own UI keeps the tree busy), so the TTL —
-refreshed each prompt — is the stale-hold backstop. Gemini's per-turn event names aren't
-device-verified yet, so it stays session-scoped with the CPU-idle sweep as its idle backstop.
-
-### 3.3 Tier-2 agents (partial / non-trivial integration)
-
-| Tool | Strategy |
-|------|----------|
-| Aider | No hooks. A shell alias in `~/.zshrc`/`~/.bashrc` wraps `aider` with acquire/release (`~/.local/bin/aider-adrafinil`). |
-| Hermes | A **shell hook** in `~/.hermes/config.yaml` (`hooks.on_session_start`/`on_session_end`), plus an approval in `~/.hermes/shell-hooks-allowlist.json` (first-use consent). Runs in CLI + Gateway; session id on stdin. Device-verified — Hermes's other two hook systems (Python plugins, gateway-only `HOOK.yaml`) don't fit. |
-| OpenCode | TS plugin at `~/.config/opencode/plugins/adrafinil.ts`. Acquire on `session.created` (id = `event.properties.info.id`); release via the process-exit watcher (`session.idle` is per-turn). |
-| Cline | Shell-alias wrapper in `~/.zshrc`/`~/.bashrc`. Limited: misses in-editor VS Code sessions — Cline's native `~/Documents/Cline/Rules/Hooks/` would be the proper path. |
-| Pi | TS extension at `~/.pi/agent/extensions/adrafinil.ts`. Turn-scoped: acquire on `agent_start`, release on `agent_settled` (not `agent_end` — Pi may still auto-retry/compact/continue), with `session_shutdown` as a safety net. Id = session file path, pid for ephemeral sessions. The acquire passes `--pid` (the extension runs in-process, so `process.pid` is the Node-hosted Pi the executable-path walk can't find) and a 4h `--ttl` refreshed per turn; the CLI also falls back to an argv-based ancestor walk gated on Pi's `AI_AGENT`/`PI_CODING_AGENT` env markers, for extensions predating `--pid`. |
-
-### 3.4 Fallback: process sniffing
-
-The daemon maps known agent binary names to their `AgentKind` (`AgentKind.byBinaryName`). A kqueue watcher fires `NOTE_EXIT` on watched PIDs; a periodic sweep (every 30s) catches anything launched between events and re-arms watches. This both force-releases assertions when an owning process dies without firing its end hook, and optionally (off by default) auto-acquires for sniffed agents with no hook installed.
-
-### 3.5 Codex special case
-
-Verified against Codex 0.135.0 on a real device:
-
-1. **No session-end hook.** `Stop` fires per *turn*, not at session end, and there's no session-end event. So Adrafinil installs **only** a `SessionStart` → acquire hook and releases on process exit (§3.4). A `Stop` → release would drop the assertion after the first turn.
-2. **Hooks fire only in the interactive TUI — not `codex exec`.** The non-interactive path doesn't engage the hook runtime. So for `codex exec`, capture relies on process-sniffing (the daemon sees the `codex` process and auto-acquires). This makes process-sniffing the recommended capture mode for Codex.
-3. **Hook trust.** Codex won't run a command hook until its exact definition is trusted (hash-based) via `/hooks` in the TUI. Adrafinil can't trust on the user's behalf, so the installer surfaces this.
-
-### 3.6 Subagent and resume semantics
-
-For Claude Code, every turn re-fires `UserPromptSubmit` → acquire and `Stop` → release on the *same* session key, so a multi-turn session cycles acquire→release→acquire harmlessly. Backgrounded subagents get their own `<tool>:<agent_id>` hold via `SubagentStart`/`SubagentStop --subagent`, keyed on the stable `agent_id` from stdin — deliberately not the session id, because background agents survive `/clear` and keep running under the *new* session id while their `agent_id` stays fixed; `SessionEnd` therefore releases only the retiring session's own key and never touches agent-keyed holds. For the session-scoped agents, `SessionStart` fires on resume and clear, and subagents fire their own start/end. Reference counting handles all of it: each acquire is keyed by `(tool, session_key)`, release with the same key is idempotent, a re-acquire of a live key just refreshes its activity timestamp, and releases for unknown keys are warnings, not errors.
-
----
-
-## 4. Assertion lifecycle and safeties
-
-### 4.1 State
-
-```swift
-struct Assertion {
-    let key: String          // tool:session_id
-    let tool: String
-    let reason: String?
-    let pid: pid_t           // caller PID
-    let processName: String  // resolved from PID
-    let acquiredAt: Date
-    var lastActivityAt: Date // advanced by the CPU sampler
-    var expiresAt: Date?     // set when --ttl is passed
-}
-```
-
-`AssertionRegistry` is an actor; `isBlocking` is `!assertions.isEmpty`. It emits the new value of `isBlocking` on an `AsyncStream` whenever it flips. The daemon iterates that single stream and drives the helper serially, so the helper never sees a stale or out-of-order value. `isBlocking` true → `setSleepBlocked(true)`; false → `setSleepBlocked(false)`.
-
-### 4.1b Display-class holds
-
-Adrafinil's default keeps the **system** awake while letting the **display** sleep — correct for
-a headless coding agent, and exactly wrong for an agent that reads the screen: when the display
-sleeps, every app's accessibility tree collapses to the bare application element, so a
-system-only hold keeps the machine on while blinding the agent. An assertion can therefore opt
-into the display class (`holdsDisplay`, via `--display` on `hold`/`acquire` or the MCP tool's
-`keep_display_awake`), composed by the daemon exactly like the blocking decision:
-
-- block system sleep ⇐ any active assertion (unchanged)
-- hold display awake ⇐ any active assertion with `holdsDisplay`
-
-The display assertion (`PreventUserIdleDisplaySleep`) lives **in the daemon, not the privileged
-helper** — it needs no root, and the helper's root surface stays minimal. Acquiring it also
-**wakes** the display if it is dark (`IOPMAssertionDeclareUserActivity`, the one call that
-relights it — an assertion only prevents *future* sleep), and the 60s reconcile plus the wake
-re-assertion (§4.5) relight it again if a sleep/wake cycle darkened the panel. Because the
-class is composed from the assertions themselves, every release path — including pause and the
-thermal/low-battery cutouts — drops it with no extra bookkeeping: the safety nets outrank the
-hold, since an agent that cannot see is recoverable and a cooked machine is not. Display class
-is sticky per key (a re-acquire without the flag never downgrades a hold mid-work), the wire
-reply echoes `displayApplied` so version skew is visible (an old daemon omits it and the CLI
-warns instead of silently not protecting the display), and status warns when a display hold is
-active behind a closed lid with no other display attached — the agent behind it is blind there.
-
-### 4.2 Idle release
-
-A periodic check (every 30s) releases an assertion when: its owning PID is gone; its process *tree* has stayed below a CPU-rate threshold (default 3% of a core) for ≥ `idleReleaseSeconds` (default 90, configurable); or its `--ttl` deadline has passed. This is the reliable Esc-interrupt catch. CPU is sampled with `proc_pidinfo(PROC_PIDTASKINFO)` summed over the agent process and all descendants (so a long tool call with a busy child still reads as active), and turned into a *rate* between ticks — an absolute-change rule would never fire, because an idle `claude` TUI still burns ~1% CPU. A max-age backstop releases assertions with an unresolved PID and a missed end hook so a leak can't pin sleep forever.
-
-### 4.3 Thermal cutout
-
-While the lid is closed AND ≥1 assertion is held, the daemon polls the SMC (sensor `TC0P`, CPU proximity; threshold 80°C default, configurable 70–95°C). On crossing it releases **all** assertions, logs a `thermalCutout` event, allows sleep, and records a cutout entry for the lid-open summary — so a bag-bound Mac can't cook itself. SMC access is public API (open `AppleSMC`, keyed read), no entitlements.
-
-A fired cutout (thermal or low-battery) **latches** (`CutoutLatch`): the still-running agent's next hook event would otherwise re-acquire within seconds and the system would oscillate acquire → cutout → release → re-acquire. While latched, acquires are rejected (with the reason on the wire). The latch clears when the hazard genuinely recedes — temperature at least 5°C under the threshold, back on AC or charge 5% over the threshold — or when the lid opens.
-
-### 4.4 Lid-close audio cue
-
-Lid-state changes are observed via IORegistry notifications on `AppleClamshellState`. On open → closed with `isBlocking == true`, a short synthesized two-tone descending chime (G5 → D5, ~0.4s) plays — recognizably intentional rather than a system error sound, generated at runtime (no bundled audio file). It respects system volume and skips if muted; the user can instead pick a built-in macOS system sound. On closed → open after a held period, the lid-open summary is shown.
-
-### 4.5 Wake re-assertion
-
-`disablesleep` can be reset by the kernel across a sleep/wake cycle. The daemon registers for system power notifications (`IORegisterForSystemPower`) and, on `kIOMessageSystemHasPoweredOn`, re-pushes the current blocking state to the helper. The helper's `set` is idempotent, so this is a no-op when nothing was lost and a repair when it was.
-
-### 4.6 Low-battery cutout
-
-The battery sibling of the thermal cutout: because `disablesleep` blocks the global sleep flag, a kept-awake lid-closed Mac on battery would otherwise drain to a hard shutdown. While **on battery** AND lid closed AND ≥1 assertion is held, the daemon polls the internal battery (`IOPSCopyPowerSourcesInfo`; threshold 20% default, configurable 5–50%). On crossing it releases **all** assertions, logs a `lowBatteryCutout` event, allows sleep, and records a cutout entry — so normal low-power sleep takes over with charge to spare. On AC there's no drain risk, so it never fires. The decision lives in `LowBatteryCutoutEvaluator` (unit-tested).
-
----
-
-## 5. UX
-
-- **Menu bar status item** — idle (outlined moon), active (filled sun, optionally badged with the assertion count), or cutout (red, last 30s after a thermal/low-battery trigger, then reverts). Clicking opens a popover listing active agents (tool · duration · reason), with "Force sleep now" and "Settings…", plus lid state and CPU temp.
-- **Settings window** — tabs General / Agents / Safety / About. The Agents tab shows each detected agent's install state (installed / not installed / modified externally) with a per-agent toggle and a reveal-in-Finder link.
-- **Lid-open summary** — a brief top-right panel after a closed-with-assertions period: which agents ran and for how long, peak CPU temp, and whether a cutout fired. Auto-dismisses.
-- **First-run installer** — no privileged work happens before the user proceeds: helper/daemon registration (`SMAppService`), the CLI PATH symlink, and hook installation are each triggered by explicit buttons. Auto-detected agents are shown as a checklist with a per-agent diff preview.
-
----
-
-## 6. CLI
-
-```
-adrafinil acquire <session-key> [--tool <name>] [--reason <text>] [--ttl <seconds>]
-adrafinil release <session-key>
-adrafinil status [--json]
-adrafinil install-hooks [--tool <name>] [--dry-run]
-adrafinil uninstall-hooks [--tool <name>]
-adrafinil daemon-status
-adrafinil version
-```
-
-`acquire`/`release` connect to the daemon socket and exit (<50ms target). If the daemon isn't running, the CLI warns and exits 0 — it never fails the agent. `--ttl` is a hard deadline after which the daemon auto-releases. `release` is idempotent; unknown keys warn and exit 0. `install-hooks`/`uninstall-hooks` mirror the GUI installer (so the CLI alone suffices for headless setups); `--dry-run` prints diffs without writing.
-
-**Wire protocol**: length-prefixed JSON over a Unix socket at `~/Library/Application Support/Adrafinil/cli.sock`.
-
-```json
-// request
-{"op": "acquire", "key": "claude-code:abc123", "tool": "claude-code", "reason": "session", "pid": 12345, "ttl": null}
-// response
-{"ok": true, "blockingState": true, "assertionCount": 1}
-```
-
----
-
-## 7. Persistence
-
-`~/Library/Application Support/Adrafinil/`:
-- `config.json` — user settings.
-- `cli.sock` — daemon socket.
-- `state.json` — current assertions plus the paused bit (`PersistedDaemonState`; legacy bare-array files still decode), so the daemon resumes after a crash without losing live agent sessions — and without silently un-pausing a paused Adrafinil. Restored assertions are validated (`RestoreFilter`): anything acquired before the current boot, or whose PID no longer resolves to a plausibly-matching executable, is dropped — a reboot recycles PIDs densely, and a stale entry landing on a busy system process would otherwise pin `disablesleep` for up to the 24 h backstop.
-- `events.log` — append-only JSON-lines log (acquire, release, cutouts, lid open/close). Rotated at 10MB to `events.log.1`. Feeds the lid-open summary.
-
----
-
-## 8. Xcode project layout
-
-`Adrafinil.xcodeproj` contains **four targets** (the four products) and consumes one local Swift package:
-
-| Target | Kind | Product | Bundle ID |
-|--------|------|---------|-----------|
-| `Adrafinil` | App | `Adrafinil.app` | `glass.kagerou.adrafinil` |
-| `AdrafinilDaemon` | Command-line tool | `AdrafinilDaemon` | `glass.kagerou.adrafinil.daemon` |
-| `AdrafinilHelper` | Command-line tool | `AdrafinilHelper` | `glass.kagerou.adrafinil.helper` |
-| `AdrafinilCLI` | Command-line tool | `adrafinil` (lowercase) | `glass.kagerou.adrafinil.cli` |
-
-The unit tests live in the `AdrafinilShared` Swift package (`AdrafinilShared/Tests/`), run with `swift test` — there is no separate Xcode test-bundle target. `AdrafinilShared` is a local Swift package (`AdrafinilShared/Package.swift`); each target links it (no embed — it's a static library). The package declares a macOS 14 minimum so the shared code stays portable; the app and tools target macOS 26.4.
-
-The project uses **Xcode filesystem-synchronized groups** (`PBXFileSystemSynchronizedRootGroup`) for every target — files added or removed under a target's source folder are picked up automatically, with no file list in the pbxproj to maintain.
-
-### 8.1 Build settings
-
-Set at the project level (inherited by every target):
-
-- `MACOSX_DEPLOYMENT_TARGET = 26.4`
-- `SWIFT_VERSION = 6.0`
-
-Per-target (the app target carries these explicitly; the command-line tools get complete checking via the Swift 6 language mode):
-
-- `SWIFT_STRICT_CONCURRENCY = complete`
-- `ENABLE_HARDENED_RUNTIME = YES`
-- `CODE_SIGN_STYLE = Automatic`
-
-### 8.2 Directory layout
-
-```
-adrafinil/
-├── AdrafinilShared/                  ← local Swift package
-│   ├── Package.swift
-│   ├── Sources/AdrafinilShared/
-│   │   ├── Constants.swift
-│   │   ├── Models/                   ← AgentKind, Assertion, AdrafinilSettings
-│   │   ├── IPC/                      ← wire formats, XPC protocols, CallerVerifier
-│   │   ├── CLI/                      ← ArgParser
-│   │   ├── Installer/                ← HookInstaller, InstallState, Integrations/
-│   │   ├── Policy/                   ← pure, unit-tested cutout/idle/lid evaluators
-│   │   └── ProcessResolver.swift
-│   └── Tests/AdrafinilSharedTests/   ← the bulk of the unit tests
-├── Adrafinil/                        ← app target sources (menu bar UI, installer, settings)
-├── AdrafinilDaemon/                  ← daemon: registry, monitors, IPC, persistence, audio
-├── AdrafinilHelper/                  ← privileged helper: SleepBlocker + XPC listener
-└── AdrafinilCLI/                     ← the `adrafinil` binary: subcommands + socket client
-```
-
-### 8.3 Embedding the tools inside the app bundle
-
-Command-line-tool products can't be added through "Frameworks, Libraries, and Embedded Content"; they're embedded via Copy Files build phases on the app target (which also depends on all three tools, so they build first):
-
-| Product | Destination (`dstSubfolderSpec`) | Path |
-|---------|----------------------------------|------|
-| `AdrafinilHelper` | Wrapper | `Contents/Library/LaunchDaemons` |
-| `AdrafinilDaemon` | Wrapper | `Contents/Library/LaunchAgents` |
-| `adrafinil` (CLI) | Wrapper | `Contents/Helpers` |
-
-The CLI goes in `Contents/Helpers` rather than `Contents/MacOS` because a lowercase `adrafinil` would collide case-insensitively with the `Adrafinil` app binary. `CLISymlinker` looks there first when symlinking the CLI onto `PATH`.
-
-Each tool's launchd plist sits next to its binary in the bundle (`AdrafinilHelper/LaunchDaemon.plist` → `Contents/Library/LaunchDaemons/`, `AdrafinilDaemon/LaunchAgent.plist` → `Contents/Library/LaunchAgents/`). These are carried in by the synchronized groups' membership-exception sets (excluded from compilation, routed into the corresponding Copy Files phase), so no manual Copy Files entry is needed. `HelperInstaller` registers them by name:
-
-```swift
-SMAppService.daemon(plistName: "LaunchDaemon.plist")
-SMAppService.agent(plistName: "LaunchAgent.plist")
-```
-
-### 8.4 Entitlements & Info.plists
-
-- **Adrafinil.app** — `Adrafinil/Adrafinil.entitlements`; App Sandbox **off** (needed for `SMAppService` and spawning processes).
-- **AdrafinilHelper** — `Info.plist` declares `SMAuthorizedClients` (`identifier "glass.kagerou.adrafinil" and anchor apple generic`); privilege comes from running as a LaunchDaemon. No entitlements file.
-- **AdrafinilDaemon** — `Info.plist` with `LSBackgroundOnly`; no `SMAuthorizedClients`, no entitlements file.
-- **AdrafinilCLI** — no entitlements file.
-
-### 8.5 Sanity check after a clean checkout
-
-1. `Cmd+B` the **Adrafinil** scheme. All four targets build (set a development team for signing, or pass `CODE_SIGNING_ALLOWED=NO` for a headless compile check — see the README).
-2. Run the app. The menu bar icon appears; first launch opens the Setup window, which calls `SMAppService.register()` for the helper and daemon — macOS prompts for approval in System Settings → Login Items.
-3. Approve both. The status icon then reflects daemon state.
-4. From a terminal: `adrafinil status` prints the daemon status.
-5. `cd AdrafinilShared && swift test` runs the shared unit tests without Xcode.
-
----
-
-## 9. Naming
-
-**Adrafinil** is a eugeroic prodrug to modafinil, fitting the nootropic-app theme. Less well-known than Modafinil itself, which is the point — searchable, ownable, distinctive. The app keeps your machine awake only when it actually has work to do.
+Installation and removal are explicit user actions. Uninstall confirms cleanup before removing recovery services, then removes only recorded integration content and its owned CLI link. See [INSTALLATION.md](INSTALLATION.md), [THREAT_MODEL.md](THREAT_MODEL.md), and the [remaining verification gates](TESTING.md).
