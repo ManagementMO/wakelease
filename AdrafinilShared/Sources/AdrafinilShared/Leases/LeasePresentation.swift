@@ -1,7 +1,7 @@
 import Foundation
 
 public struct LeasePresentation: Sendable, Equatable {
-    public enum Kind: Sendable { case unavailable, simulation, normal, active, waiting, paused, cutOut, unconfirmed }
+    public enum Kind: Sendable { case unavailable, simulation, normal, active, waiting, paused, cutOut, unconfirmed, otherUser }
     public let kind: Kind
     public let title: String
     public let detail: String
@@ -23,6 +23,8 @@ public struct LeasePresentation: Sendable, Equatable {
             kind = .cutOut; title = "Safety cutoff"; detail = state.cutouts.contains(.thermal) ? "Thermal protection released the wake leases." : "Battery protection released the wake leases."; symbol = "shield.lefthalf.filled"
         } else if state.paused {
             kind = .paused; title = "Paused"; detail = "New leases are blocked until you resume."; symbol = "pause.circle"
+        } else if !state.demand.system, status.power.globalBlocked == true {
+            kind = .otherUser; title = "Other work active"; detail = "No wake demand for this user. Another user still has a helper claim."; symbol = "person.2"
         } else if !state.leases.isEmpty, state.leases.allSatisfy({ $0.state == .waitingForUser }) {
             kind = .waiting; title = "Waiting for you"; detail = state.effectiveCount > 0 ? "Wake protection remains during the grace period." : "Grace has ended. Normal sleep is allowed."; symbol = "hourglass"
         } else if state.effectiveCount > 0, status.power.applied?.system == true {

@@ -15,7 +15,7 @@ final class AwayNotifier {
     static let shared = AwayNotifier()
 
     private let center = UNUserNotificationCenter.current()
-    private let log = Logger(subsystem: "glass.kagerou.adrafinil", category: "notifications")
+    private let log = Logger(subsystem: WakeLeaseIdentity.appBundleID, category: "notifications")
 
     /// A recap waiting for the screen to unlock, and the one-shot unlock observer holding it.
     private var pendingSummary: AwaySummary?

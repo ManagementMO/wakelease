@@ -38,6 +38,15 @@ struct LeasePresentationTests {
     }
 
     @Test
+    func `another user claim is not presented as normal sleep`() {
+        let book = LeaseBook(bootID: "test")
+        let state = LeaseServiceStatus(mode: "system", snapshot: LeaseSnapshot(book: book, daemonBootID: UUID()), power: LeasePowerReport(applied: WakeDemand.none, helperConnected: true, globalBlocked: true))
+        let presentation = LeasePresentation(status: state)
+        #expect(presentation.title != "Normal sleep")
+        #expect(presentation.detail.contains("Another user"))
+    }
+
+    @Test
     func `normal sleep and active states have distinct semantics`() throws {
         #expect(try LeasePresentation(status: status(work: false, applied: WakeDemand.none)).kind == .normal)
         #expect(try LeasePresentation(status: status(work: true, applied: WakeDemand(system: true, display: false))).kind == .active)

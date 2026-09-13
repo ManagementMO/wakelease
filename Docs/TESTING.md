@@ -42,7 +42,7 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 
 ## Evidence recorded so far
 
-The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **528 Swift tests in 58 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-two CLI end-to-end cases, six UI preview cases and a disposable package smoke test also passed at that checkpoint. Subsequent counts should be taken from fresh command output rather than treated as a permanent certification.
+The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **529 Swift tests in 58 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-two CLI end-to-end cases, six UI preview cases and a disposable package smoke test also passed at that checkpoint. Subsequent counts should be taken from fresh command output rather than treated as a permanent certification.
 
 Observed concurrent CLI latency in simulation varied with load: examples ranged from roughly 14–19 ms median and 18–30 ms p95, with an earlier burst above 60 ms p95. This includes CLI startup and persistence, not certified privileged transition latency. Do not advertise an unconditional sub-50-ms result or zero idle CPU from these samples.
 

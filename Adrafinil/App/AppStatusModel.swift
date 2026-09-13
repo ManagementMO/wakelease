@@ -5,7 +5,7 @@ import ServiceManagement
 import SwiftUI
 
 extension Notification.Name {
-    static let adrafinilAwaySummaryReceived = Notification.Name("glass.kagerou.adrafinil.awaySummaryReceived")
+    static let adrafinilAwaySummaryReceived = Notification.Name(WakeLeaseIdentity.appBundleID + ".awaySummaryReceived")
 }
 
 /// Observable model the menu bar UI binds to. Driven by the daemon's push stream

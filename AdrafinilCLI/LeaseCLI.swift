@@ -140,12 +140,9 @@ enum WakeLeaseCLI {
 
     private static func printStatus(_ status: LeaseServiceStatus) {
         let state = status.snapshot
-        let title = if status.mode == "simulation" { "SIMULATION (no power changes)" }
-        else if state.demand.system, status.power.applied?.system == true, status.power.helperConnected, status.power.error == nil { "AWAKE" }
-        else if state.demand.system { "WAKE PROTECTION UNCONFIRMED" }
-        else if status.power.applied?.system == true { "RESTORING NORMAL SLEEP" }
-        else { "NORMAL SLEEP" }
-        print("\(title) · \(state.effectiveCount) effective lease(s)")
+        let presentation = LeasePresentation(status: status)
+        print("\(presentation.title.uppercased()) · \(state.effectiveCount) effective lease(s)")
+        print(presentation.detail)
         if state.paused { print("Paused — new leases are blocked.") }
         print("")
         for lease in state.leases {
