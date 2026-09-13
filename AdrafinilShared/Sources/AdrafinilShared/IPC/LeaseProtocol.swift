@@ -23,6 +23,7 @@ public struct LeaseRequest: Codable, Sendable {
     public var sessionID: String?
     public var parentLeaseID: UUID?
     public var metadata: [String: String]?
+    public var preferences: WakeLeasePreferences? = nil
 
     public init(operation: String, key: String? = nil, source: String? = nil, sourceKind: LeaseSourceKind? = nil, wakeClass: WakeClass? = nil, ttlSeconds: TimeInterval? = nil, reason: String? = nil, owner: ProcessIdentity? = nil, sessionID: String? = nil, parentLeaseID: UUID? = nil, metadata: [String: String]? = nil) {
         version = 1
@@ -69,6 +70,14 @@ public struct LeaseServiceStatus: Codable, Sendable {
     public let mode: String
     public let snapshot: LeaseSnapshot
     public let power: LeasePowerReport
+
+    public init(protocolVersion: Int = 1, version: String = WakeLeaseIdentity.marketingVersion, mode: String, snapshot: LeaseSnapshot, power: LeasePowerReport) {
+        self.protocolVersion = protocolVersion
+        self.version = version
+        self.mode = mode
+        self.snapshot = snapshot
+        self.power = power
+    }
 }
 
 public struct LeaseReply: Codable, Sendable {
@@ -79,6 +88,7 @@ public struct LeaseReply: Codable, Sendable {
     public var changed: Bool?
     public var lease: WakeLease?
     public var status: LeaseServiceStatus?
+    public var preferences: WakeLeasePreferences? = nil
 
     public init(ok: Bool, requestID: UUID? = nil, error: LeaseProtocolError? = nil, changed: Bool? = nil, lease: WakeLease? = nil, status: LeaseServiceStatus? = nil) {
         version = 1
@@ -112,21 +122,26 @@ public struct LeaseProtocolService: Sendable {
     private let beforeMutation: @Sendable (LeaseRequest) async -> Void
     private let onMutation: @Sendable (LeaseSnapshot) async -> Void
     private let power: @Sendable () async -> LeasePowerReport
+    private let settings: @Sendable (WakeLeasePreferences?, TimeInterval?) async throws -> WakeLeasePreferences
 
-    public init(broker: LeaseBroker, mode: String, beforeMutation: @escaping @Sendable (LeaseRequest) async -> Void = { _ in }, onMutation: @escaping @Sendable (LeaseSnapshot) async -> Void = { _ in }, power: @escaping @Sendable () async -> LeasePowerReport = { LeasePowerReport() }) {
+    public init(broker: LeaseBroker, mode: String, beforeMutation: @escaping @Sendable (LeaseRequest) async -> Void = { _ in }, onMutation: @escaping @Sendable (LeaseSnapshot) async -> Void = { _ in }, power: @escaping @Sendable () async -> LeasePowerReport = { LeasePowerReport() }, settings: @escaping @Sendable (WakeLeasePreferences?, TimeInterval?) async throws -> WakeLeasePreferences = { value, _ in
+        guard value == nil else { throw LeaseFailure.invalidField }
+        return WakeLeasePreferences()
+    }) {
         self.broker = broker
         self.mode = mode
         self.beforeMutation = beforeMutation
         self.onMutation = onMutation
         self.power = power
+        self.settings = settings
     }
 
     public func handle(_ request: LeaseRequest, peer: LocalPeer) async -> LeaseReply {
         guard peer.uid == getuid() else { return failure(request, "unauthorized_peer", "Only the daemon's user may access this socket.") }
         guard request.version == 1 else { return failure(request, "unsupported_version", "Supported protocol versions: 1.") }
-        let operations: Set<String> = ["acquire", "hold", "renew", "wait", "release", "releaseAll", "pause", "resume", "status", "doctor", "ping"]
+        let operations: Set<String> = ["acquire", "hold", "renew", "wait", "release", "releaseAll", "pause", "resume", "status", "doctor", "ping", "settings", "configure"]
         guard operations.contains(request.operation) else { return failure(request, "unknown_operation", "Unknown lease operation.") }
-        let mutates = !["status", "doctor", "ping"].contains(request.operation)
+        let mutates = !["status", "doctor", "ping", "settings"].contains(request.operation)
         let initial = await broker.snapshot()
         if mutates {
             guard request.bootID == initial.bootID, let stamp = request.issuedAt, stamp.isFinite else {
@@ -136,7 +151,11 @@ public struct LeaseProtocolService: Sendable {
         do {
             if mutates { await beforeMutation(request) }
             var result: LeaseChange?
+            var preferences: WakeLeasePreferences?
             switch request.operation {
+            case "settings", "configure":
+                guard request.operation != "configure" || request.preferences != nil else { throw LeaseFailure.invalidField }
+                preferences = try await settings(request.operation == "configure" ? request.preferences : nil, request.issuedAt)
             case "acquire", "hold":
                 guard let key = request.key else { return failure(request, "invalid_request", "A client-chosen key is required.") }
                 let proposal = LeaseProposal(key: key, source: request.source ?? "custom", sourceKind: request.sourceKind ?? (request.operation == "hold" ? .timed : .custom), wakeClass: request.wakeClass ?? .system, ttlSeconds: request.ttlSeconds, reason: request.reason, owner: request.owner, sessionID: request.sessionID, parentLeaseID: request.parentLeaseID, metadata: request.metadata ?? [:])
@@ -154,7 +173,9 @@ public struct LeaseProtocolService: Sendable {
             default: break
             }
             if mutates { await onMutation(broker.snapshot()) }
-            return await reply(request, result: result)
+            var response = await reply(request, result: result)
+            response.preferences = preferences
+            return response
         } catch let error as LeaseFailure {
             if mutates { await onMutation(broker.snapshot()) }
             return failure(request, error.rawValue, error.localizedDescription)

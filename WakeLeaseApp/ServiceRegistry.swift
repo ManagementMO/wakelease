@@ -1,0 +1,74 @@
+import AdrafinilShared
+import Foundation
+import Security
+import ServiceManagement
+
+@MainActor
+enum ServiceRegistry {
+    struct Failure: Error, LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    static var bundledCLI: URL {
+        if isPackaged { return Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/" + WakeLeaseIdentity.cliBinaryName) }
+        return (Bundle.main.executableURL?.deletingLastPathComponent() ?? Bundle.main.bundleURL).appendingPathComponent(WakeLeaseIdentity.cliBinaryName)
+    }
+    static var isPackaged: Bool { Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier == WakeLeaseIdentity.appBundleID }
+    static var canInstall: Bool { isPackaged && ComponentTrust.currentTeam != nil }
+
+    static func statuses() -> [String: String] {
+        ["Daemon": name(SMAppService.agent(plistName: "LaunchAgent.plist").status),
+         "Helper": name(SMAppService.daemon(plistName: "LaunchDaemon.plist").status),
+         "Menu at login": name(SMAppService.mainApp.status)]
+    }
+
+    static func install(preferences: WakeLeasePreferences) throws -> String {
+        guard canInstall else { throw Failure(message: "Enable services from the packaged, team-signed app. Unsigned development uses the simulation daemon.") }
+        let bundle = Bundle.main.bundleURL
+        try verify(bundle, role: .app)
+        try verify(bundle.appendingPathComponent("Contents/Library/LaunchAgents/WakeLeaseDaemon"), role: .daemon)
+        try verify(bundle.appendingPathComponent("Contents/Library/LaunchDaemons/WakeLeaseHelper"), role: .helper)
+        let helper = SMAppService.daemon(plistName: "LaunchDaemon.plist")
+        let daemon = SMAppService.agent(plistName: "LaunchAgent.plist")
+        for service in [helper, daemon] where service.status == .notRegistered || service.status == .notFound {
+            try service.register()
+        }
+        if preferences.launchMenuAtLogin, SMAppService.mainApp.status == .notRegistered { try SMAppService.mainApp.register() }
+        if helper.status == .requiresApproval || daemon.status == .requiresApproval {
+            return "Approve WakeLease in System Settings → General → Login Items & Extensions, then refresh."
+        }
+        return "Services registered. Confirm the daemon and helper status before closing the lid."
+    }
+
+    static func setLogin(_ enabled: Bool) async throws {
+        guard isPackaged else { throw Failure(message: "Login registration requires the packaged app.") }
+        if enabled {
+            if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
+            guard SMAppService.mainApp.status == .enabled else { throw Failure(message: "Login item approval is still required in System Settings.") }
+        } else if SMAppService.mainApp.status != .notRegistered { try await SMAppService.mainApp.unregister() }
+    }
+
+    static func openApprovalSettings() { SMAppService.openSystemSettingsLoginItems() }
+
+    private static func verify(_ url: URL, role: ComponentTrust.Role) throws {
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        guard let text = ComponentTrust.requirement(role: role),
+              SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+              SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess else {
+            throw Failure(message: "A bundled component failed signature or role validation. Rebuild or reinstall a matching signed bundle.")
+        }
+    }
+
+    private static func name(_ status: SMAppService.Status) -> String {
+        switch status {
+        case .enabled: "Enabled"
+        case .requiresApproval: "Needs approval"
+        case .notRegistered: "Not registered"
+        case .notFound: "Not found in this bundle"
+        @unknown default: "Unknown"
+        }
+    }
+}

@@ -81,6 +81,7 @@ public struct WakeLease: Codable, Sendable, Hashable, Identifiable {
     public var ttlSeconds: TimeInterval
     public var waitingUntil: TimeInterval?
     public var waitingExpiresAt: Date?
+    public var waitingStarted: TimeInterval? = nil
     public var metadata: [String: String]
 
     public func requiresWake(at time: LeaseTime) -> Bool {
@@ -152,7 +153,7 @@ public enum LeaseFailure: String, Error, Codable, Sendable, LocalizedError {
     }
 }
 
-public struct LeasePolicy: Codable, Sendable {
+public struct LeasePolicy: Codable, Sendable, Equatable {
     public var defaultTTLSeconds: TimeInterval
     public var maximumTTLSeconds: TimeInterval
     public var waitingPolicy: AgentWaitingPolicy
@@ -165,7 +166,7 @@ public struct LeasePolicy: Codable, Sendable {
 
     public init(defaultTTLSeconds: TimeInterval = 14_400, maximumTTLSeconds: TimeInterval = 86_400, waitingPolicy: AgentWaitingPolicy = .grace, waitingGraceSeconds: TimeInterval = 600, maxLeases: Int = 128, maxLeasesPerOwner: Int = 32, batteryCutoff: Int = 20, thermalCutoff: Double = 80, sleepClosedLidOnFinalRelease: Bool = true) {
         self.maximumTTLSeconds = maximumTTLSeconds.isFinite ? min(86_400, max(1, maximumTTLSeconds)) : 86_400
-        self.defaultTTLSeconds = defaultTTLSeconds.isFinite ? min(self.maximumTTLSeconds, max(1, defaultTTLSeconds)) : 14_400
+        self.defaultTTLSeconds = defaultTTLSeconds.isFinite ? min(self.maximumTTLSeconds, max(1, defaultTTLSeconds)) : min(self.maximumTTLSeconds, 14_400)
         self.waitingPolicy = waitingPolicy
         self.waitingGraceSeconds = waitingGraceSeconds.isFinite ? min(7200, max(0, waitingGraceSeconds)) : 600
         self.maxLeases = min(128, max(1, maxLeases))
@@ -173,6 +174,29 @@ public struct LeasePolicy: Codable, Sendable {
         self.batteryCutoff = min(50, max(10, batteryCutoff))
         self.thermalCutoff = thermalCutoff.isFinite ? min(95, max(70, thermalCutoff)) : 80
         self.sleepClosedLidOnFinalRelease = sleepClosedLidOnFinalRelease
+    }
+
+    public func normalized() -> LeasePolicy {
+        LeasePolicy(defaultTTLSeconds: defaultTTLSeconds, maximumTTLSeconds: maximumTTLSeconds, waitingPolicy: waitingPolicy, waitingGraceSeconds: waitingGraceSeconds, maxLeases: maxLeases, maxLeasesPerOwner: maxLeasesPerOwner, batteryCutoff: batteryCutoff, thermalCutoff: thermalCutoff, sleepClosedLidOnFinalRelease: sleepClosedLidOnFinalRelease)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case defaultTTLSeconds, maximumTTLSeconds, waitingPolicy, waitingGraceSeconds, maxLeases, maxLeasesPerOwner, batteryCutoff, thermalCutoff, sleepClosedLidOnFinalRelease
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            defaultTTLSeconds: try values.decodeIfPresent(Double.self, forKey: .defaultTTLSeconds) ?? 14_400,
+            maximumTTLSeconds: try values.decodeIfPresent(Double.self, forKey: .maximumTTLSeconds) ?? 86_400,
+            waitingPolicy: try values.decodeIfPresent(AgentWaitingPolicy.self, forKey: .waitingPolicy) ?? .grace,
+            waitingGraceSeconds: try values.decodeIfPresent(Double.self, forKey: .waitingGraceSeconds) ?? 600,
+            maxLeases: try values.decodeIfPresent(Int.self, forKey: .maxLeases) ?? 128,
+            maxLeasesPerOwner: try values.decodeIfPresent(Int.self, forKey: .maxLeasesPerOwner) ?? 32,
+            batteryCutoff: try values.decodeIfPresent(Int.self, forKey: .batteryCutoff) ?? 20,
+            thermalCutoff: try values.decodeIfPresent(Double.self, forKey: .thermalCutoff) ?? 80,
+            sleepClosedLidOnFinalRelease: try values.decodeIfPresent(Bool.self, forKey: .sleepClosedLidOnFinalRelease) ?? true
+        )
     }
 }
 

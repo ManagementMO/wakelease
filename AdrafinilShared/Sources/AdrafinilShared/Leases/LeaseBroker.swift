@@ -14,7 +14,7 @@ public struct LeaseSnapshot: Codable, Sendable {
     public let nextDeadline: TimeInterval?
     public let sleepClosedLidOnFinalRelease: Bool
 
-    init(book: LeaseBook, daemonBootID: UUID) {
+    public init(book: LeaseBook, daemonBootID: UUID) {
         self.daemonBootID = daemonBootID
         bootID = book.bootID
         generation = book.generation
@@ -64,8 +64,8 @@ public actor LeaseBroker {
         guard data.count <= 2 * 1024 * 1024 else { throw LeaseFailure.capacity }
         var restored = try JSONDecoder().decode(LeaseBook.self, from: data)
         let time = clock.now()
-        _ = restored.setPolicy(book.policy, at: time)
         let change = restored.recover(bootID: clock.bootID, at: time, identity: identify)
+        _ = restored.setPolicy(book.policy, at: time)
         book = restored
         publish(change.events)
     }

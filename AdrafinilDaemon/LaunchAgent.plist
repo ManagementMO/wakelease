@@ -6,7 +6,7 @@
     <string>org.wakelease.daemon</string>
 
     <key>BundleProgram</key>
-    <string>Contents/Library/LaunchAgents/AdrafinilDaemon</string>
+    <string>Contents/Library/LaunchAgents/WakeLeaseDaemon</string>
 
     <key>MachServices</key>
     <dict>

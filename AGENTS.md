@@ -19,6 +19,9 @@ Production authorization must fail closed. Unsigned development must not weaken 
 - Full Xcode app build is a separate verification gate; Command Line Tools cannot perform it.
 - End-to-end CLI tests: `python3 Tests/cli_integration.py`. They launch only the explicitly labeled simulation daemon in a temporary private directory and test TTY/signals, concurrent clients, TTL, and restart. `WAKELEASE_BIN_DIR` may select a different built binary directory.
 - SwiftSyntax is intentionally a direct test-only dependency to pin the transitive macro version; SwiftPM may warn that no target imports it directly.
+- Native UI build: `WAKELEASE_SOURCE_TESTING=1 swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseMenu`. The distinct executable name avoids a case-insensitive collision with `wakelease`; packaging puts the app executable and CLI in different bundle directories.
+- On a logged-in macOS desktop, `python3 Tests/ui_smoke.py` renders isolated preview windows and checks they exit. Preview mode never connects to the daemon or installs services. Keep menu insertion updates idempotent: writing unchanged values into the observable preferences produced a SwiftUI menu-graph loop, diagnosed with `sample` and covered by this smoke test.
+- With source Swift Testing 6.2.4, evaluate mutating value-type method calls before `#expect`; direct calls may trigger the macro's immutable-receiver expansion.
 - Inspect `git diff --check` and run relevant tests before each commit.
 
 Keep the actor registry as the source of truth. Count effective leases, not process names or UI state. Check stale generations after every suspension point on the sleep-release path. A failed unblock must remain observable and retryable.

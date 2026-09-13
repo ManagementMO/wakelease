@@ -94,6 +94,7 @@ public struct LeaseBook: Codable, Sendable {
         lease.ttlSeconds = ttl
         lease.waitingUntil = nil
         lease.waitingExpiresAt = nil
+        lease.waitingStarted = nil
         if !proposal.metadata.isEmpty { lease.metadata = proposal.metadata }
         entries[lease.key] = lease
         revisions[lease.key] = Revision(at: stamp, terminal: false)
@@ -129,6 +130,7 @@ public struct LeaseBook: Codable, Sendable {
         let expired = purge(at: time)
         if lease.state != .waitingForUser {
             lease.state = .waitingForUser
+            lease.waitingStarted = time.continuous
             let grace: TimeInterval? = switch policy.waitingPolicy {
             case .keepAwake: nil
             case .grace: policy.waitingGraceSeconds
@@ -270,8 +272,28 @@ public struct LeaseBook: Codable, Sendable {
     }
 
     public mutating func setPolicy(_ value: LeasePolicy, at time: LeaseTime) -> LeaseChange {
-        policy = LeasePolicy(defaultTTLSeconds: value.defaultTTLSeconds, maximumTTLSeconds: value.maximumTTLSeconds, waitingPolicy: value.waitingPolicy, waitingGraceSeconds: value.waitingGraceSeconds, maxLeases: value.maxLeases, maxLeasesPerOwner: value.maxLeasesPerOwner, batteryCutoff: value.batteryCutoff, thermalCutoff: value.thermalCutoff, sleepClosedLidOnFinalRelease: value.sleepClosedLidOnFinalRelease)
-        return updateSafety(safety, at: time)
+        let before = demand
+        let previous = policy
+        policy = value.normalized()
+        now = time
+        for var lease in Array(entries.values) {
+            lease.ttlSeconds = min(lease.ttlSeconds, policy.maximumTTLSeconds)
+            lease.deadline = min(lease.deadline, time.continuous + policy.maximumTTLSeconds)
+            lease.expiresAt = time.wall.addingTimeInterval(lease.deadline - time.continuous)
+            if lease.state == .waitingForUser {
+                let start = lease.waitingStarted ?? lease.waitingUntil.map { $0 - previous.waitingGraceSeconds } ?? time.continuous
+                lease.waitingStarted = start
+                switch policy.waitingPolicy {
+                case .keepAwake: lease.waitingUntil = nil
+                case .grace: lease.waitingUntil = start + policy.waitingGraceSeconds
+                case .sleep: lease.waitingUntil = time.continuous
+                }
+                lease.waitingExpiresAt = lease.waitingUntil.map { time.wall.addingTimeInterval($0 - time.continuous) }
+            }
+            entries[lease.key] = lease
+        }
+        let safetyChange = updateSafety(safety, at: time)
+        return finish(before: before, changed: previous != policy || safetyChange.changed, events: safetyChange.events)
     }
 
     private var hazards: Set<LeaseCutout> {

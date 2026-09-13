@@ -63,6 +63,9 @@ final class LeaseDaemonRuntime {
     private var nextMaintenance = EarliestDeadline()
     private var maintenanceGeneration: UInt64 = 0
     private var persistence: LeasePersistence?
+    private var preferences = WakeLeasePreferences()
+    private var preferencesIssue: String?
+    private var preferencesStamp: TimeInterval = -1
     private var stopping = false
 
     init(directory: URL, simulation: Bool) {
@@ -74,7 +77,9 @@ final class LeaseDaemonRuntime {
         let directory = try SecureDirectory(url: directoryURL, create: true)
         let persistence = LeasePersistence(directory: directory)
         self.persistence = persistence
-        let broker = LeaseBroker(persist: { book, events in persistence.save(book, events: events) })
+        do { preferences = try WakeLeasePreferences.load(from: directory) }
+        catch { preferencesIssue = "Preferences could not be decoded; admission is paused until the configuration is reviewed." }
+        let broker = LeaseBroker(policy: preferences.policy, persist: { book, events in persistence.save(book, events: events) })
         self.broker = broker
         let gate = StartupGate()
         let service = LeaseProtocolService(broker: broker, mode: simulation ? "simulation" : "system", beforeMutation: { [weak self] request in
@@ -83,6 +88,9 @@ final class LeaseDaemonRuntime {
             await self?.synchronizePower()
         }, power: { [weak self] in
             await self?.powerReport() ?? LeasePowerReport(error: "Daemon is stopping.")
+        }, settings: { [weak self] value, stamp in
+            guard let self else { throw LeaseFailure.paused }
+            return try await self.updatePreferences(value, issuedAt: stamp)
         })
         let server = LeaseSocketServer(directory: directoryURL) { request, peer in
             await gate.wait()
@@ -132,6 +140,7 @@ final class LeaseDaemonRuntime {
                 await broker.setPaused(true)
             }
         }
+        if preferencesIssue != nil { await broker.setPaused(true) }
         await refreshSafety()
         await synchronizePower(force: true)
         observer = Task { @MainActor [weak self, broker] in
@@ -160,7 +169,7 @@ final class LeaseDaemonRuntime {
     }
 
     private func intent(_ snapshot: LeaseSnapshot, stopping: Bool = false) -> LeasePowerIntent {
-        LeasePowerIntent(version: snapshot.generation, demand: snapshot.demand, lidClosed: snapshot.safety.lidClosed, externalDisplay: snapshot.safety.externalDisplayConnected, promptSleep: !stopping && snapshot.sleepClosedLidOnFinalRelease, cue: false)
+        LeasePowerIntent(version: snapshot.generation, demand: snapshot.demand, lidClosed: snapshot.safety.lidClosed, externalDisplay: snapshot.safety.externalDisplayConnected, promptSleep: !stopping && snapshot.sleepClosedLidOnFinalRelease, cue: preferences.preSleepCue && snapshot.cutouts.isEmpty)
     }
 
     private func synchronizePower(force: Bool = false) async {
@@ -172,8 +181,24 @@ final class LeaseDaemonRuntime {
 
     private func powerReport() async -> LeasePowerReport {
         var report = await driver?.report() ?? LeasePowerReport()
-        report.error = report.error ?? persistence?.error
+        report.error = report.error ?? persistence?.error ?? preferencesIssue
         return report
+    }
+
+    private func updatePreferences(_ value: WakeLeasePreferences?, issuedAt: TimeInterval?) async throws -> WakeLeasePreferences {
+        guard let value else { return preferences }
+        guard !stopping, let issuedAt, let persistence, let broker else { throw LeaseFailure.paused }
+        let now = SystemLeaseClock().now().continuous
+        if issuedAt == preferencesStamp, value.normalized() == preferences { return preferences }
+        guard issuedAt.isFinite, issuedAt > preferencesStamp, issuedAt >= now - 120, issuedAt <= now + 1 else { throw LeaseFailure.staleRequest }
+        let updated = value.normalized()
+        try updated.save(to: persistence.directory)
+        preferences = updated
+        preferencesStamp = issuedAt
+        preferencesIssue = nil
+        await broker.setPolicy(updated.policy)
+        notifyStatus()
+        return preferences
     }
 
     private func scheduleMaintenance(_ snapshot: LeaseSnapshot) {

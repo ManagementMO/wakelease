@@ -5,7 +5,7 @@
     <key>CFBundleIdentifier</key>
     <string>org.wakelease.helper</string>
     <key>CFBundleName</key>
-    <string>AdrafinilHelper</string>
+    <string>WakeLeaseHelper</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
@@ -13,7 +13,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>15.4</string>
     <!-- Team-pinned: "anchor apple generic" alone is satisfied by ANY Apple-issued developer
          certificate, and the identifier is freely chosen by whoever signs, so without the
          subject.OU pin any developer could ship an app authorized to manage this root helper.
