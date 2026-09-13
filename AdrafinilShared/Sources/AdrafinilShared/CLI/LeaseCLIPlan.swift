@@ -21,7 +21,7 @@ public struct LeaseCLIPlan: Sendable {
         command = ["--help", "-h"].contains(first) ? "help" : (["--version", "-v"].contains(first) ? "version" : first)
         generatedKey = command + ":" + UUID().uuidString.lowercased()
         let booleanOptions: Set<String> = ["--json", "--display", "--all", "--dry-run", "--yes", "--help", "--strict"]
-        let valueOptions: Set<String> = ["--source", "--reason", "--ttl", "--for", "--pid", "--parent", "--session", "--state-dir"]
+        let valueOptions: Set<String> = ["--source", "--reason", "--ttl", "--for", "--pid", "--parent", "--session", "--state-dir", "--home", "--session-variable"]
         let args = Array(arguments.dropFirst())
         var values: [String: String] = [:]
         var flags: Set<String> = []

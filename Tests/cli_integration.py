@@ -211,6 +211,58 @@ class CLIIntegration(unittest.TestCase):
             client.sendall(struct.pack(">I", 0xFFFFFFFF))
         self.assertEqual(self.status()["mode"], "simulation")
 
+    def test_hooks_are_turn_scoped_and_fail_soft(self):
+        cursor = json.dumps({"conversation_id": "chat", "generation_id": "turn", "prompt": "private-content"})
+        self.assertEqual(self.cli_run("hook", "cursor", "start", input=cursor).returncode, 0)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 1)
+        self.assertEqual(self.cli_run("hook", "cursor", "stop", input=cursor).returncode, 0)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+        result = self.cli_run("hook", "claude-code", "start", input="malformed")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), {})
+        self.assertNotIn("private-content", result.stdout + result.stderr)
+
+    def test_subagent_hook_outlives_parent_stop(self):
+        parent = json.dumps({"session_id": "parent"})
+        child = json.dumps({"session_id": "parent", "agent_id": "child"})
+        self.cli_run("hook", "claude-code", "start", input=parent)
+        self.cli_run("hook", "claude-code", "subagent-start", input=child)
+        self.cli_run("hook", "claude-code", "stop", input=parent)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 1)
+        self.cli_run("hook", "claude-code", "subagent-stop", input=child)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+
+    def test_integration_cli_round_trip_uses_fake_home(self):
+        with tempfile.TemporaryDirectory(prefix="wl-home-") as home:
+            target = Path(home) / ".claude/settings.json"
+            target.parent.mkdir()
+            original = '{"userSetting": "keep"}'
+            target.write_text(original)
+            preview = self.cli_run("integrations", "install", "claude-code", "--home", home, "--dry-run")
+            self.assertEqual(preview.returncode, 0, preview.stderr)
+            self.assertEqual(target.read_text(), original)
+            installed = self.cli_run("integrations", "install", "claude-code", "--home", home, "--yes")
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            removed = self.cli_run("integrations", "uninstall", "claude-code", "--home", home, "--yes")
+            self.assertEqual(removed.returncode, 0, removed.stderr)
+            self.assertEqual(target.read_text(), original)
+
+    def test_local_mcp_creates_independent_display_lease(self):
+        messages = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "clientInfo": {"name": "test", "version": "1"}, "capabilities": {}}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "keep_display_awake", "arguments": {"reason": "fixture background work", "minutes": 1}}},
+        ]
+        result = self.cli_run("mcp", input="\n".join(map(json.dumps, messages)) + "\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        replies = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual([reply["id"] for reply in replies], [1, 2, 3])
+        tools = {tool["name"] for tool in replies[1]["result"]["tools"]}
+        self.assertEqual(tools, {"keep_system_awake", "keep_display_awake", "release_wake_lease", "get_wake_status"})
+        self.assertFalse(replies[2]["result"]["isError"])
+        self.assertTrue(self.status()["snapshot"]["demand"]["display"])
+
     def test_doctor_reports_simulation_honestly(self):
         result = self.cli_run("doctor")
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -46,7 +46,10 @@ public final class SecureDirectory: @unchecked Sendable {
                     guard mkdirat(fd, component, 0o700) == 0 || errno == EEXIST else { throw LocalIOError.system(errno) }
                     next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
                 }
-                guard next >= 0 else { throw LocalIOError.unsafePath }
+                guard next >= 0 else {
+                    if errno == ENOENT { throw LocalIOError.system(ENOENT) }
+                    throw LocalIOError.unsafePath
+                }
                 Darwin.close(fd)
                 fd = next
                 var info = stat()
@@ -86,7 +89,7 @@ public final class SecureDirectory: @unchecked Sendable {
         return data
     }
 
-    public func write(_ data: Data, name: String) throws {
+    public func write(_ data: Data, name: String, permissions: UInt16 = 0o600) throws {
         try validateName(name)
         try validateExisting(name)
         let temporary = ".write-" + UUID().uuidString
@@ -100,9 +103,38 @@ public final class SecureDirectory: @unchecked Sendable {
             guard count > 0 else { throw LocalIOError.system(errno) }
             offset += count
         }
-        guard fsync(fd) == 0 else { throw LocalIOError.system(errno) }
+        guard fchmod(fd, permissions & 0o777) == 0, fsync(fd) == 0 else { throw LocalIOError.system(errno) }
         try validateExisting(name)
         guard renameat(descriptor, temporary, descriptor, name) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func permissions(name: String) throws -> UInt16? {
+        try validateName(name)
+        var info = stat()
+        if fstatat(descriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+            if errno == ENOENT { return nil }
+            throw LocalIOError.system(errno)
+        }
+        guard safeFile(info) else { throw LocalIOError.unsafePath }
+        return info.st_mode & 0o777
+    }
+
+    public func remove(name: String, matching expected: Data) throws {
+        guard try read(name: name) == expected else { throw LocalIOError.unsafePath }
+        try validateExisting(name)
+        guard unlinkat(descriptor, name, 0) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func lock(name: String) throws -> Int32 {
+        try validateName(name)
+        let fd = openat(descriptor, name, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw LocalIOError.unsafePath }
+        var info = stat()
+        guard fstat(fd, &info) == 0, safeFile(info), flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            Darwin.close(fd)
+            throw LocalIOError.alreadyRunning
+        }
+        return fd
     }
 
     func validateName(_ name: String) throws {

@@ -131,17 +131,23 @@ int wakelease_watch(pid_t pid, void *context, wakelease_watch_callback check) {
     int fd = kqueue();
     if (fd < 0) { result = 125; goto cleanup; }
     fcntl(fd, F_SETFD, FD_CLOEXEC);
-    struct kevent registration, event;
-    EV_SET(&registration, pid, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_ONESHOT, NOTE_EXIT, 0, NULL);
+    struct kevent registrations[5], event;
+    EV_SET(&registrations[0], pid, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_ONESHOT, NOTE_EXIT, 0, NULL);
+    for (int index = 0; index < 4; index++) {
+        EV_SET(&registrations[index + 1], signals[index], EVFILT_SIGNAL, EV_ADD | EV_ENABLE, 0, 0, NULL);
+    }
     if (!check(pid, context)) goto cleanup;
-    if (kevent(fd, &registration, 1, NULL, 0, NULL) < 0) {
+    if (kevent(fd, registrations, 5, NULL, 0, NULL) < 0) {
         result = errno == ESRCH ? 0 : 125;
         goto cleanup;
     }
     while (!watch_signal && check(pid, context)) {
         struct timespec timeout = {30, 0};
         int count = kevent(fd, NULL, 0, &event, 1, &timeout);
-        if (count > 0) break;
+        if (count > 0) {
+            if (event.filter == EVFILT_SIGNAL) watch_signal = (sig_atomic_t)event.ident;
+            break;
+        }
         if (count < 0 && errno != EINTR) { result = 125; break; }
     }
 cleanup:

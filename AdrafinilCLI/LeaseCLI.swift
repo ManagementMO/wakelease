@@ -9,10 +9,17 @@ struct LeaseRemoteError: Error, LocalizedError {
 
 enum WakeLeaseCLI {
     static func execute(_ arguments: [String]) -> Int32 {
+        if arguments.first == "hook" { return LeaseHookCommand.run(Array(arguments.dropFirst())) }
         do {
             let plan = try LeaseCLIPlan(arguments: arguments)
             if plan.command == "help" || plan.flags.contains("--help") { print(help); return 0 }
             if plan.command == "version" { print("wakelease \(WakeLeaseIdentity.marketingVersion) (protocol 1)"); return 0 }
+            if plan.command == "integrations" { return try LeaseIntegrationCLI.run(plan) }
+            if plan.command == "hooks" { return try LeaseIntegrationCLI.generate(plan) }
+            if plan.command == "mcp" {
+                var server = LeaseMCPServer(plan: plan)
+                return server.run()
+            }
             let client = LeaseSocketClient(directory: plan.directory)
             if plan.command == "run" { return try run(plan, client: client) }
             if plan.command == "watch" { return try watch(plan, client: client) }
@@ -173,6 +180,10 @@ enum WakeLeaseCLI {
       wakelease watch --pid <pid> [--source <name>]
       wakelease status [--json]
       wakelease doctor [--json]
+      wakelease integrations [list | preview <name>]
+      wakelease integrations install|uninstall <name> [--dry-run] [--yes]
+      wakelease hooks generate --source <name> [--session-variable NAME]
+      wakelease mcp [--source <name>]
       wakelease pause | resume
       wakelease sleep
       wakelease version
