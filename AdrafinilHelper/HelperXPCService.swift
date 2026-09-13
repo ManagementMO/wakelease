@@ -9,22 +9,22 @@ final class HelperXPCService: NSObject, HelperXPCProtocol, @unchecked Sendable {
     /// Launch-time binary identity, shared process-wide, used to adopt an in-place update.
     private let staleness: ExecutableStaleness
     private let log = Logger(subsystem: AdrafinilConstants.helperBundleID, category: "XPCService")
+    private let controller: HelperPowerController
+    private let uid: UInt32
+    private let token: UUID
 
-    init(blocker: SleepBlocker, staleness: ExecutableStaleness) {
+    init(blocker: SleepBlocker, staleness: ExecutableStaleness, controller: HelperPowerController, uid: UInt32, token: UUID) {
         self.blocker = blocker
         self.staleness = staleness
+        self.controller = controller
+        self.uid = uid
+        self.token = token
         super.init()
     }
 
     func setSleepBlocked(_ blocked: Bool, reply: @escaping @Sendable (Bool, NSError?) -> Void) {
         log.notice("XPC setSleepBlocked(\(blocked, privacy: .public)) received from daemon")
-        do {
-            try blocker.set(blocked: blocked)
-            reply(blocker.isBlocked, nil)
-        } catch {
-            log.error("XPC setSleepBlocked(\(blocked, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
-            reply(blocker.isBlocked, error as NSError)
-        }
+        controller.set(uid: uid, token: token, blocked: blocked, reply: reply)
         // Unblocking returns us to idle — the safe point to adopt a binary an update swapped in.
         if !blocked { relaunchIfUpdated() }
     }
@@ -43,12 +43,14 @@ final class HelperXPCService: NSObject, HelperXPCProtocol, @unchecked Sendable {
 
     /// Adopts a binary that an in-place app update swapped onto disk by exiting so `launchd`
     /// (KeepAlive) relaunches the helper from the new image. Gated on **not** currently blocking,
-    /// since exiting clears the sleep block; the blocked state is re-read at the last moment so a
-    /// concurrent acquire can't be dropped. A no-op unless the on-disk binary actually changed.
+    /// since exiting clears the sleep block; idle verification and exit share the controller's
+    /// serial executor so a concurrent acquire cannot slip between the check and process exit.
     private func relaunchIfUpdated() {
-        guard staleness.hasBeenReplaced(), !blocker.isBlocked else { return }
-        log.notice("Helper binary replaced by an update — exiting so launchd relaunches the new helper")
-        exit(0)
+        controller.ifIdle { [staleness, log] in
+            guard staleness.hasBeenReplaced() else { return }
+            log.notice("Helper binary replaced by an update — exiting so launchd relaunches the new helper")
+            exit(0)
+        }
     }
 }
 

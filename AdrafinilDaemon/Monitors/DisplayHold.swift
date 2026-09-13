@@ -21,16 +21,26 @@ import OSLog
 final class DisplayHold {
     private let log = Logger(subsystem: AdrafinilConstants.daemonBundleID, category: "DisplayHold")
 
-    private var assertionID: IOPMAssertionID = 0
+    private var slots = WakeAssertionSlots()
+    private var assertionID: IOPMAssertionID {
+        get { slots.display }
+        set { slots.display = newValue }
+    }
     private var isHeld = false
+    private(set) var lastError: IOReturn?
+    var isActive: Bool { isHeld }
     /// Reused across `IOPMAssertionDeclareUserActivity` calls, as its contract asks: pass the
     /// previous id back in and the system refreshes that assertion instead of minting anew.
-    private var userActivityID: IOPMAssertionID = 0
+    private var userActivityID: IOPMAssertionID {
+        get { slots.userActivity }
+        set { slots.userActivity = newValue }
+    }
 
     /// Raises or drops the display assertion. Idempotent — the 60s reconcile re-calls this with
     /// the current desired state, mirroring the helper's clamshell re-apply philosophy: if the
     /// assertion was lost (sleep/wake edge, IOKit hiccup), the reconcile restores it.
     func set(held wanted: Bool) {
+        lastError = nil
         if wanted, !isHeld {
             // Raw string: Apple defines kIOPMAssertionTypePreventUserIdleDisplaySleep as a CFSTR
             // macro that does not import into Swift.
@@ -38,21 +48,27 @@ final class DisplayHold {
                 "PreventUserIdleDisplaySleep" as CFString,
                 IOPMAssertionLevel(kIOPMAssertionLevelOn),
                 // ASCII only: `pmset -g assertions` renders non-ASCII in assertion names as `?`.
-                "Adrafinil display-class hold - an agent is reading the screen" as CFString,
+                (WakeLeaseIdentity.name + " display wake lease") as CFString,
                 &assertionID,
             )
             guard result == kIOReturnSuccess else {
+                lastError = result
                 log.error("display assertion failed: IOReturn \(result, privacy: .public)")
                 return
             }
             isHeld = true
             log.notice("display hold raised (assertion \(self.assertionID, privacy: .public))")
             wakeDisplayIfAsleep()
-        } else if !wanted, isHeld {
-            IOPMAssertionRelease(assertionID)
-            assertionID = 0
-            isHeld = false
-            log.notice("display hold dropped")
+        } else if !wanted {
+            var failure: IOReturn?
+            let cleared = slots.releaseAll { id in
+                let result = IOPMAssertionRelease(id)
+                if result != kIOReturnSuccess && result != kIOReturnNotFound { failure = result; return false }
+                return true
+            }
+            isHeld = slots.display != 0
+            lastError = failure
+            if cleared { log.notice("display hold dropped") }
         } else if wanted {
             // Already held — treat the reconcile as a chance to relight a panel that went dark
             // through a path the assertion doesn't govern (e.g. a system sleep/wake cycle; the
@@ -68,13 +84,14 @@ final class DisplayHold {
     private func wakeDisplayIfAsleep() {
         guard CGDisplayIsAsleep(CGMainDisplayID()) != 0 else { return }
         let result = IOPMAssertionDeclareUserActivity(
-            "Adrafinil display-class hold wake" as CFString,
+            (WakeLeaseIdentity.name + " display wake") as CFString,
             kIOPMUserActiveLocal,
             &userActivityID,
         )
         if result == kIOReturnSuccess {
             log.notice("display woken for display-class hold")
         } else {
+            lastError = result
             log.error("display wake failed: IOReturn \(result, privacy: .public)")
         }
     }
@@ -94,6 +111,9 @@ final class DisplayHold {
     }
 
     isolated deinit {
-        if isHeld { IOPMAssertionRelease(assertionID) }
+        _ = slots.releaseAll { id in
+            let result = IOPMAssertionRelease(id)
+            return result == kIOReturnSuccess || result == kIOReturnNotFound
+        }
     }
 }

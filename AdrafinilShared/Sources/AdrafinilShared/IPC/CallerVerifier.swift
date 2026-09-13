@@ -3,15 +3,15 @@ import Security
 
 /// Code-signing requirement check on incoming XPC clients.
 ///
-/// Both the privileged helper (which must only accept the daemon) and the daemon's
-/// app-facing listener use this to reject connections from binaries we did not sign.
-/// The audit token is the canonical identifier for an XPC peer; we pull the signing
-/// identifier from it via the `SecCode` APIs and require our reverse-DNS prefix.
+/// Compatibility gate for retained app-facing listeners; the production helper uses
+/// its narrower daemon-only listener requirement from `ComponentTrust`.
+/// New calls use Foundation's public per-message requirement enforcement. Historical
+/// audit-token helpers below are not used by the production authorization path.
 public enum CallerVerifier {
-    /// Reverse-DNS prefix the app bundle signs with. Command-line tool targets (the daemon and
-    /// helper) instead sign with their product name as the code identifier — `AdrafinilDaemon` /
-    /// `AdrafinilHelper` — because a non-bundle target's identifier defaults to `$(PRODUCT_NAME)`,
-    /// not its bundle id. Both shapes are accepted (see `isAdrafinilComponent`).
+    /// The derivative's namespace. Exact role identifiers, not arbitrary children of this prefix,
+    /// are accepted. Non-bundle targets must be signed with their explicit reverse-DNS identifier;
+    /// a product-name or linker ad-hoc identifier is not a production authorization credential.
+    /// Unsigned development uses the simulated transport rather than weakening this requirement.
     public static let allowedPrefix = WakeLeaseIdentity.appBundleID
 
     /// Authorize an incoming XPC peer.
@@ -20,18 +20,16 @@ public enum CallerVerifier {
     /// 1. The caller shares **our own Team Identifier** — read from `self` at runtime, so an
     ///    open-source rebuild under a different Developer ID still authorizes its own components
     ///    without code changes.
-    /// 2. The caller is an **Adrafinil component**, not just any app from the same team
+    /// 2. The caller is a **WakeLease component**, not just any app from the same team
     ///    (the developer may ship others — e.g. sibling menu-bar apps — under the same team).
     ///
-    /// Only when this process itself has no team (an ad-hoc local dev build) does authorization
-    /// fall back to the component-identifier check alone.
+    /// A process without a verified Apple-issued team cannot authorize production peers.
+    /// The public NSXPC requirement is installed before the connection resumes.
     public static func isAuthorized(_ connection: NSXPCConnection) -> Bool {
-        guard let caller = signingInfo(for: connection) else { return false }
-        return isAuthorizedDecision(
-            ownTeam: ownTeamIdentifier(),
-            callerTeam: caller.team,
-            identifier: caller.identifier,
-        )
+        let requirements = [ComponentTrust.Role.app, .daemon, .helper].compactMap { ComponentTrust.requirement(role: $0) }
+        guard requirements.count == 3 else { return false }
+        connection.setCodeSigningRequirement(requirements.map { "(" + $0 + ")" }.joined(separator: " or "))
+        return true
     }
 
     /// The pure authorization decision, separated from the Security-framework plumbing so it is
@@ -40,20 +38,18 @@ public enum CallerVerifier {
     /// identifier it likes (`codesign -s - --identifier …`), so the identifier is only
     /// trustworthy once the team check has anchored the caller to a certificate we control.
     static func isAuthorizedDecision(ownTeam: String?, callerTeam: String?, identifier: String) -> Bool {
-        if let ownTeam {
-            guard callerTeam == ownTeam else { return false }
-        }
+        guard let ownTeam, !ownTeam.isEmpty, callerTeam == ownTeam else { return false }
         return isAdrafinilComponent(identifier)
     }
 
-    /// Code identifiers of the non-bundle command-line targets (the daemon and helper), which sign
-    /// with their `$(PRODUCT_NAME)` rather than a reverse-DNS bundle id. Matched exactly — a prefix
-    /// test (`hasPrefix("Adrafinil")`) would also admit a hostile `AdrafinilEvil`, which on an
-    /// ad-hoc build (no team to cross-check) is the entire authorization gate.
-    static let componentIdentifiers: Set<String> = ["AdrafinilDaemon", "AdrafinilHelper"]
+    /// Exact identifiers accepted by the compatibility wrapper. Production signing assigns these
+    /// explicitly, including to the non-bundle daemon and helper. Neither a product-name match
+    /// nor a namespace prefix substitutes for the Apple anchor and team requirement enforced by
+    /// Foundation. The helper itself narrows this set further to the daemon role.
+    static let componentIdentifiers: Set<String> = [WakeLeaseIdentity.appBundleID, WakeLeaseIdentity.daemonBundleID, WakeLeaseIdentity.helperBundleID]
 
     static func isAdrafinilComponent(_ identifier: String) -> Bool {
-        identifier.hasPrefix(allowedPrefix) || componentIdentifiers.contains(identifier)
+        componentIdentifiers.contains(identifier)
     }
 
     private struct SigningInfo {

@@ -53,11 +53,13 @@ public struct LeasePowerReport: Codable, Sendable {
     public var applied: WakeDemand?
     public var error: String?
     public var helperConnected: Bool
+    public var globalBlocked: Bool?
 
-    public init(applied: WakeDemand? = nil, error: String? = nil, helperConnected: Bool = false) {
+    public init(applied: WakeDemand? = nil, error: String? = nil, helperConnected: Bool = false, globalBlocked: Bool? = nil) {
         self.applied = applied
         self.error = error
         self.helperConnected = helperConnected
+        self.globalBlocked = globalBlocked
     }
 }
 
@@ -107,12 +109,14 @@ public enum LeaseJSON {
 public struct LeaseProtocolService: Sendable {
     public let broker: LeaseBroker
     public let mode: String
+    private let beforeMutation: @Sendable (LeaseRequest) async -> Void
     private let onMutation: @Sendable (LeaseSnapshot) async -> Void
     private let power: @Sendable () async -> LeasePowerReport
 
-    public init(broker: LeaseBroker, mode: String, onMutation: @escaping @Sendable (LeaseSnapshot) async -> Void = { _ in }, power: @escaping @Sendable () async -> LeasePowerReport = { LeasePowerReport() }) {
+    public init(broker: LeaseBroker, mode: String, beforeMutation: @escaping @Sendable (LeaseRequest) async -> Void = { _ in }, onMutation: @escaping @Sendable (LeaseSnapshot) async -> Void = { _ in }, power: @escaping @Sendable () async -> LeasePowerReport = { LeasePowerReport() }) {
         self.broker = broker
         self.mode = mode
+        self.beforeMutation = beforeMutation
         self.onMutation = onMutation
         self.power = power
     }
@@ -130,6 +134,7 @@ public struct LeaseProtocolService: Sendable {
             }
         }
         do {
+            if mutates { await beforeMutation(request) }
             var result: LeaseChange?
             switch request.operation {
             case "acquire", "hold":

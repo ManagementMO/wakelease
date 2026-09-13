@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import os
 @testable import AdrafinilShared
 
 @Suite("Lease broker concurrency")
@@ -75,6 +76,31 @@ struct LeaseBrokerTests {
         #expect(first.startSeconds > 0)
         #expect(SystemProcessIdentity.read(-1) == nil)
         #expect(SystemProcessIdentity.read(0) == nil)
+    }
+
+    @Test func renewCannotKeepADeadOwnerAlive() async throws {
+        let identity = ProcessIdentity(pid: 42, uid: 501, startSeconds: 100, startMicroseconds: 0)
+        let live = OSAllocatedUnfairLock<ProcessIdentity?>(initialState: identity)
+        let broker = LeaseBroker(identify: { _ in live.withLock { $0 } })
+        _ = try await broker.acquire(LeaseProposal(key: "job", owner: identity))
+        live.withLock { $0 = nil }
+        do {
+            _ = try await broker.renew(key: "job")
+            Issue.record("A heartbeat extended an exited process")
+        } catch {}
+        #expect(await broker.snapshot().demand == .none)
+    }
+
+    @Test func shutdownClosesAdmissionWithoutPersistingAUserPause() async throws {
+        let broker = LeaseBroker()
+        _ = try await broker.acquire(LeaseProposal(key: "a"))
+        let stopped = await broker.beginShutdown()
+        #expect(stopped.demand == .none)
+        #expect(!stopped.paused)
+        do {
+            _ = try await broker.acquire(LeaseProposal(key: "late"))
+            Issue.record("A late connection resurrected work during shutdown")
+        } catch { #expect(error as? LeaseFailure == .paused) }
     }
 
     @Test func safetyLatchSurvivesBrokerRestart() async throws {

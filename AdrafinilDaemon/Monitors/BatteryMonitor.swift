@@ -118,7 +118,7 @@ final class BatteryMonitor {
 
     /// Reads the internal battery as `(percent 0–100, onBattery)`. Returns nil when there is no
     /// internal battery (desktop) or the power-source info is unavailable.
-    private static func read() -> (percent: Int, onBattery: Bool)? {
+    static func read() -> (percent: Int, onBattery: Bool)? {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return nil }
         let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as [CFTypeRef]
         for source in sources {

@@ -27,6 +27,8 @@ WakeLease is an independent project. Adrafinil's author and contributors do not 
 
 WakeLease generalizes work into leases, adds explicit waiting/lifetime/ownership semantics, and separates the stable local integration contract from agent-specific adapters. Critical changes must have regression tests, particularly final-release races and failures clearing persistent power state. Upstream implementation details are preserved unless there is a documented correctness or product reason to change them.
 
+Power-path changes preserve the two mechanisms but strengthen their coordination: failed unblocks propagate and remain retryable; a serialized writer cancels stale pre-sleep work; display release includes the auxiliary user-activity assertion; the helper has renewable per-user claims and a connected-but-wedged deadline; fixed `pmset` children have bounded output, are killed/reaped on timeout, and remain in launchd's process group. Production XPC uses Apple's public code-requirement APIs with an exact daemon role, not the upstream ad-hoc/prefix fallback. These changes have dedicated fake-controller, process, ownership and authorization regression tests.
+
 The [valentine/adrafinil Sequoia backport](https://github.com/valentine/adrafinil) was reviewed for deployment-target lessons: ServiceManagement is available before Tahoe, while upstream isolated deinits impose a macOS 15.4 Swift-runtime floor. This is build evidence, not WakeLease hardware certification.
 
 [Decaf](https://github.com/grishahq/decaf) was examined for completion-triggered sleep and failsafe ideas. No Decaf code is incorporated. Its sudoers installation and shared `/tmp` state are not adopted.

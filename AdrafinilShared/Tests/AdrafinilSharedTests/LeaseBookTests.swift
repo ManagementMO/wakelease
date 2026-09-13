@@ -279,6 +279,20 @@ struct LeaseBookTests {
         #expect(book.leases.map(\.key) == ["new"])
     }
 
+    @Test func corruptPersistenceCannotCreateAnUnboundedLease() throws {
+        var book = LeaseBook(bootID: "boot")
+        _ = try book.acquire(proposal("a", ttl: 60), at: time(1000))
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(book)) as? [String: Any])
+        var entries = try #require(object["entries"] as? [String: [String: Any]])
+        entries["a"]?["deadline"] = 1e100
+        entries["a"]?["ttlSeconds"] = 1e100
+        object["entries"] = entries
+        var restored = try JSONDecoder().decode(LeaseBook.self, from: JSONSerialization.data(withJSONObject: object))
+        _ = restored.recover(bootID: "boot", at: time(1001), identity: { _ in nil })
+        #expect(restored.demand == .none)
+        #expect(restored.leases.isEmpty)
+    }
+
     @Test func wallClockRollbackCannotExtendAnExpiredLease() throws {
         var book = LeaseBook(bootID: "boot")
         _ = try book.acquire(proposal("a", ttl: 10), at: time(1000))

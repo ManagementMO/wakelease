@@ -1,6 +1,6 @@
 # WakeLease threat model
 
-Status: pre-release engineering requirements. This document is not a security certification. Imported Adrafinil code is being evaluated against these requirements; a release must close the gaps listed below.
+Status: pre-release. The controls below are implemented and regression-tested where safely testable. This is not a security certification: live signed-peer tests, a signed app build, and physical MacBook recovery/sleep tests remain release gates.
 
 ## Assets and trust boundaries
 
@@ -42,13 +42,26 @@ WakeLease cannot make a laptop safe in a sealed bag. Keep an actively computing 
 
 External-display clamshell use is a distinct situation. On the final lease, restore normal power management. Request prompt sleep only with a confirmed closed lid, confirmed absence of external displays, and evidence that WakeLease was maintaining the wake condition. Unknown display/lid state must not cause forced sleep. A safety cutout may interrupt work; it must not disable macOS's own protection.
 
-## Release-blocking audit findings in the imported baseline
+## Imported findings and regression status
 
-1. Failed clamshell clearing is swallowed and reported as unblocked; the daemon retry path only retries `true`.
-2. A queued false transition can execute after an acquire arrives during a pre-sleep cue. Reconciliation can overlap the stream consumer.
-3. Helper authorization permits an identifier-only fallback when ad-hoc signed, and prefix matching is broader than an exact component role. The helper plist also contains an upstream-specific team identifier.
-4. Socket clients supply unverified owner PIDs; process restoration compares executable substrings rather than process birth identity.
-5. Configuration writes follow symlinks and do not create backups. Filename/substr ownership is insufficient for uninstalling modified or foreign content.
-6. Cutout latch state is not persisted, and some thermal failures reuse stale readings.
+1. **Failed clear reported as success:** reproduced in `SleepBlockPolicyTests`; clearing now throws, incomplete startup cleanup is observable, and `LeasePowerReconcilerTests` proves zero-demand retries remain active.
+2. **Acquire during pre-sleep cue / unblock:** deterministic delayed-controller tests prove the stale queued clear is cancelled or followed by the latest true state. A command wrapper waits for confirmed protection before starting its child.
+3. **Unsigned/prefix authorization:** production helper startup refuses unprivileged/unsigned execution. Foundation enforces an Apple-anchored exact daemon requirement before consulting the listener delegate; the client pins the helper. Pure requirement/decision tests and unsigned-execution refusal tests pass. Real signed positive/negative tests are still required.
+4. **PID reuse / corrupt recovery:** owners use kernel process birth identity and peer UID. Renewal rechecks owner liveness; recovery drops invalid lifetimes and identities. Unit and CLI process-exit tests cover these paths.
+5. **Unsafe integration ownership:** receipt-backed installers refuse symlinks, unknown plugin ownership and modified owned files. Temporary-home tests cover byte-exact restoration, permissions, backups, foreign settings and foreign empty hook groups.
+6. **Lost cutout state / stale readings:** latches persist; the production provider uses fresh optional SMC readings plus public thermal state rather than presenting cached temperatures as current. Provider failure cannot clear a temperature-dependent latch.
+7. **Leaked display user-activity assertion:** final release clears both assertion slots, retains failed releases for retry, and is covered by `SafetySchedulingTests`.
+8. **Daemon remains connected but wedged:** helper claims expire after 90 seconds without a set request, independently of a 60-second disconnect grace. Per-user aggregation preserves another user's live claim and rejects callbacks from replaced connections.
 
-These findings must be reproduced where testable, fixed, and linked to regression tests before the project can be called public-release-ready. Unit tests alone cannot certify the signing boundary or physical closed-lid behavior.
+Safety maintenance uses earliest-deadline scheduling: incoming traffic cannot postpone an already armed sweep or failed-cleanup retry. Root subprocesses inherit launchd's process group; a child that cannot be reaped causes the helper to exit for supervisor cleanup rather than issuing a competing newer setting.
+
+## Remaining release gates and boundaries
+
+- Live code-signing tests must exercise valid peers, different teams, wrong identifiers, unsigned peers, in-place updates and registration approval. Unit strings are not evidence of OS enforcement on a shipped signed artifact.
+- Hardware tests must verify closed-lid work, final release, helper/daemon crashes and external displays. Successful IOPM or `pmset` calls alone do not certify physical behavior.
+- `disablesleep` is machine-global. Do not run competing closed-lid utilities. Each daemon's cutout retires that user's claims; concurrent users independently monitor the same machine. The helper aggregates mechanical demand without choosing user safety policy.
+- Immediate sleep is attempted only after this daemon's protection is removed, with a known closed lid, known absence of external displays, no remaining helper-global claim, and no conflicting public power assertions. The API also requires root or the console user; failure leaves ordinary sleep restored and is reported.
+- Same-user malware can invoke the intentionally open bounded lease API and can already edit that user's files. Receipts and permissions protect accidental/external changes and other users; they are not a new sandbox against a process fully controlling the account.
+- Config updates use a cooperative lock plus input comparison. Noncooperating external writers can still race a filesystem replacement; avoid simultaneous edits and inspect reported conflicts.
+
+No physical sleep operation, privileged registration, production signing, or publication has been performed during automated verification.

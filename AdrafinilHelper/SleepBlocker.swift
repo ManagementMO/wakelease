@@ -47,7 +47,7 @@ import OSLog
 /// is `Sendable` and owns its protected state), so the blocker is internally synchronized — it no
 /// longer relies on each `HelperXPCService` holding a per-instance lock (which wouldn't serialize
 /// across instances anyway).
-final class SleepBlocker {
+final class SleepBlocker: @unchecked Sendable {
     /// The policy, guarded by the lock that owns it. `uncheckedState` because `SleepBlockPolicy`
     /// holds the non-`Sendable` IOKit/`pmset` mechanisms — the lock *is* the isolation that makes
     /// touching them across connections safe.
@@ -55,7 +55,11 @@ final class SleepBlocker {
     private let log = Logger(subsystem: AdrafinilConstants.helperBundleID, category: "SleepBlocker")
 
     var isBlocked: Bool {
-        policy.withLock { $0.isBlocked }
+        policy.withLock { $0.isBlocked || $0.needsReconciliation }
+    }
+
+    var needsReconciliation: Bool {
+        policy.withLock { $0.needsReconciliation }
     }
 
     init() {
@@ -96,9 +100,9 @@ private final class RealIdleAssertion: IdleSleepAsserting {
     /// it here rather than leaking it until process death. With the shared-instance design this
     /// should only ever fire at process exit (where the kernel would reclaim it anyway), but it
     /// makes any future per-instance use leak-free by construction.
-    deinit { release() }
+    deinit { try? release() }
 
-    func acquire() {
+    func acquire() throws {
         guard assertionID == 0 else {
             log.debug("ensureIdleAssertion — already held (id=\(self.assertionID))")
             return
@@ -106,19 +110,21 @@ private final class RealIdleAssertion: IdleSleepAsserting {
         let kr = IOPMAssertionCreateWithName(
             kIOPMAssertPreventUserIdleSystemSleep as CFString,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "Adrafinil: agent active" as CFString,
+            (WakeLeaseIdentity.name + ": work active") as CFString,
             &assertionID,
         )
         if kr == kIOReturnSuccess {
             log.notice("ensureIdleAssertion — created idle-sleep assertion id=\(self.assertionID)")
         } else {
             log.error("ensureIdleAssertion — IOPMAssertionCreateWithName failed: kr=0x\(String(kr, radix: 16), privacy: .public)")
+            throw NSError(domain: WakeLeaseIdentity.helperBundleID, code: Int(kr))
         }
     }
 
-    func release() {
+    func release() throws {
         guard assertionID != 0 else { return }
-        IOPMAssertionRelease(assertionID)
+        let result = IOPMAssertionRelease(assertionID)
+        guard result == kIOReturnSuccess else { throw NSError(domain: WakeLeaseIdentity.helperBundleID, code: Int(result)) }
         log.notice("releaseIdleAssertion — released id=\(self.assertionID)")
         assertionID = 0
     }
@@ -126,7 +132,7 @@ private final class RealIdleAssertion: IdleSleepAsserting {
 
 /// Clamshell (lid-closed) sleep via the global `SleepDisabled` setting, applied with
 /// `pmset -a disablesleep`. Throws if `pmset` exits non-zero (surfaced to the daemon over XPC on
-/// block; best-effort on unblock).
+/// both block and unblock; failed cleanup remains scheduled for retry).
 private final class PMSetClamshellControl: ClamshellSleepControlling {
     private let log = Logger(subsystem: AdrafinilConstants.helperBundleID, category: "SleepBlocker")
 
@@ -137,47 +143,19 @@ private final class PMSetClamshellControl: ClamshellSleepControlling {
     private static let pmsetTimeout: TimeInterval = 10
 
     func setDisabled(_ disabled: Bool) throws {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-        task.arguments = ["-a", "disablesleep", disabled ? "1" : "0"]
-
-        let errPipe = Pipe()
-        task.standardError = errPipe
-        task.standardOutput = Pipe()
-
         // Drain stderr while pmset runs: reading only after exit deadlocks if it ever fills the
         // pipe, and the helper would then hold its policy lock forever.
-        let errBuffer = OSAllocatedUnfairLock(initialState: Data())
-        errPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            if !chunk.isEmpty { errBuffer.withLock { $0.append(chunk) } }
+        let result = try BoundedProcess.run(arguments: ["/usr/bin/pmset", "-a", "disablesleep", disabled ? "1" : "0"], timeout: Self.pmsetTimeout)
+        if result.unreaped {
+            log.fault("pmset could not be reaped — exiting for launchd process-group cleanup")
+            _exit(70)
         }
-        defer { errPipe.fileHandleForReading.readabilityHandler = nil }
-
-        let exited = DispatchSemaphore(value: 0)
-        task.terminationHandler = { _ in exited.signal() }
-        try task.run()
-
-        guard exited.wait(timeout: .now() + Self.pmsetTimeout) == .success else {
-            log.error("pmset -a disablesleep \(disabled ? "1" : "0", privacy: .public) did not exit within \(Self.pmsetTimeout, privacy: .public)s — killing it")
-            task.terminate()
-            _ = exited.wait(timeout: .now() + 2)
-            throw NSError(
-                domain: "Adrafinil.Helper.SleepBlocker",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "pmset timed out"],
-            )
+        guard result.status == 0 else {
+            throw NSError(domain: WakeLeaseIdentity.helperBundleID, code: Int(result.status), userInfo: [NSLocalizedDescriptionKey: result.timedOut ? "pmset timed out; its child was killed and reaped" : "pmset failed"])
         }
-        log.notice("pmset -a disablesleep \(disabled ? "1" : "0", privacy: .public) exited \(task.terminationStatus, privacy: .public)")
-
-        guard task.terminationStatus == 0 else {
-            let err = errBuffer.withLock { $0 }
-            let msg = String(data: err, encoding: .utf8).flatMap { $0.isEmpty ? nil : $0 } ?? "pmset exited \(task.terminationStatus)"
-            throw NSError(
-                domain: "Adrafinil.Helper.SleepBlocker",
-                code: Int(task.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: msg],
-            )
+        guard try PowerManagementInspector.readSleepDisabled() == disabled else {
+            throw NSError(domain: WakeLeaseIdentity.helperBundleID, code: -2, userInfo: [NSLocalizedDescriptionKey: "pmset did not confirm the requested SleepDisabled state"])
         }
+        log.notice("sleep_block_reconciled — disabled=\(disabled, privacy: .public)")
     }
 }

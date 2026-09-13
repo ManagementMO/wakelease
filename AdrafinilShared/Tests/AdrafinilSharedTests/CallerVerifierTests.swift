@@ -2,8 +2,8 @@ import Testing
 @testable import AdrafinilShared
 
 /// The full XPC authorization path needs a live signed peer, so it can't be unit-tested here. This
-/// covers the identifier allow-list — the part that, on an ad-hoc build with no team to cross-check,
-/// is the *entire* gate. A prefix test would have admitted a hostile `AdrafinilEvil`.
+/// covers the exact identifier allow-list and rejection of unsigned production callers.
+/// Prefix matches and developer product names must not substitute for authenticated roles.
 @Suite("CallerVerifier identifier allow-list")
 struct CallerVerifierTests {
     @Test
@@ -14,9 +14,11 @@ struct CallerVerifierTests {
     }
 
     @Test
-    func `the non-bundle daemon/helper product names are accepted exactly`() {
-        #expect(CallerVerifier.isAdrafinilComponent("AdrafinilDaemon"))
-        #expect(CallerVerifier.isAdrafinilComponent("AdrafinilHelper"))
+    func `unqualified product names and namespace lookalikes are rejected`() {
+        #expect(!CallerVerifier.isAdrafinilComponent("AdrafinilDaemon"))
+        #expect(!CallerVerifier.isAdrafinilComponent("AdrafinilHelper"))
+        #expect(!CallerVerifier.isAdrafinilComponent("org.wakelease.evil"))
+        #expect(!CallerVerifier.isAdrafinilComponent("org.wakeleaseevil"))
     }
 
     @Test
@@ -43,7 +45,7 @@ struct CallerVerifierTests {
 /// identifier it claims.
 @Suite("CallerVerifier authorization decision")
 struct CallerVerifierDecisionTests {
-    private let team = "52K336H235"
+    private let team = "TESTTEAM01"
 
     @Test
     func `team-signed self rejects a caller with no team even with a valid identifier`() {
@@ -68,7 +70,7 @@ struct CallerVerifierDecisionTests {
             ownTeam: team, callerTeam: team, identifier: "org.wakelease",
         ))
         #expect(CallerVerifier.isAuthorizedDecision(
-            ownTeam: team, callerTeam: team, identifier: "AdrafinilDaemon",
+            ownTeam: team, callerTeam: team, identifier: "org.wakelease.daemon",
         ))
     }
 
@@ -80,15 +82,15 @@ struct CallerVerifierDecisionTests {
     }
 
     @Test
-    func `ad-hoc self falls back to the identifier allow-list alone`() {
-        #expect(CallerVerifier.isAuthorizedDecision(
-            ownTeam: nil, callerTeam: nil, identifier: "AdrafinilHelper",
+    func `ad-hoc self never authorizes production peers`() {
+        #expect(!CallerVerifier.isAuthorizedDecision(
+            ownTeam: nil, callerTeam: nil, identifier: "org.wakelease.helper",
         ))
         #expect(!CallerVerifier.isAuthorizedDecision(
             ownTeam: nil, callerTeam: nil, identifier: "AdrafinilEvil",
         ))
-        // A team-signed caller hitting an ad-hoc build is still held to the identifier list.
-        #expect(CallerVerifier.isAuthorizedDecision(
+        // A team-signed caller cannot turn an unsigned host into a production trust anchor.
+        #expect(!CallerVerifier.isAuthorizedDecision(
             ownTeam: nil, callerTeam: team, identifier: "org.wakelease.daemon",
         ))
     }

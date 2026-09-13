@@ -108,13 +108,16 @@ enum WakeLeaseCLI {
     }
 
     private static func requireProtection(_ reply: LeaseReply) throws {
-        guard reply.status?.mode == "simulation" || reply.status?.power.applied?.system == true else {
+        guard reply.status?.mode == "simulation" || (reply.status?.power.applied?.system == true && reply.status?.power.helperConnected == true && reply.status?.power.error == nil) else {
             throw LeaseRemoteError(message: "Wake protection is not confirmed. The command was not started.")
         }
     }
 
     private static func warnIfSimulation(_ reply: LeaseReply) {
         if reply.status?.mode == "simulation" { error("Simulation mode: no macOS power settings or assertions are changed.") }
+        else if reply.status?.power.error != nil || reply.status?.power.helperConnected != true {
+            error("Lease recorded, but wake protection is unconfirmed. Check wakelease doctor before relying on closed-lid execution.")
+        }
     }
 
     private static func printJSON(_ value: some Encodable) {
@@ -125,8 +128,9 @@ enum WakeLeaseCLI {
         let state = status.snapshot
         let title: String
         if status.mode == "simulation" { title = "SIMULATION (no power changes)" }
-        else if status.power.applied?.system == true { title = "AWAKE" }
+        else if state.demand.system && status.power.applied?.system == true && status.power.helperConnected && status.power.error == nil { title = "AWAKE" }
         else if state.demand.system { title = "WAKE PROTECTION UNCONFIRMED" }
+        else if status.power.applied?.system == true { title = "RESTORING NORMAL SLEEP" }
         else { title = "NORMAL SLEEP" }
         print("\(title) · \(state.effectiveCount) effective lease(s)")
         if state.paused { print("Paused — new leases are blocked.") }

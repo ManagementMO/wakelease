@@ -70,6 +70,16 @@ class CLIIntegration(unittest.TestCase):
         self.cli_run("resume")
         self.cli_run("release", "--all")
 
+    def test_development_binaries_refuse_production_modes(self):
+        if os.getuid() == 0:
+            self.skipTest("This test requires an unprivileged developer account")
+        helper = str(Path(self.daemon_binary).with_name("WakeLeaseHelper"))
+        rejected = subprocess.run([helper], capture_output=True, text=True, timeout=5)
+        self.assertEqual(rejected.returncode, 78)
+        self.assertIn("No power settings were changed", rejected.stderr)
+        rejected = subprocess.run([self.daemon_binary], env=self.environment, capture_output=True, text=True, timeout=5)
+        self.assertEqual(rejected.returncode, 78)
+
     def test_help(self):
         result = self.cli_run("--help")
         self.assertEqual(result.returncode, 0)

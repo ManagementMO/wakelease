@@ -39,6 +39,7 @@ final class SMCReader: @unchecked Sendable {
     }
 
     func close() {
+        cpuSensorKeys = nil
         if isOpen {
             IOServiceClose(connection)
             connection = 0

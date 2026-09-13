@@ -23,7 +23,11 @@ public enum WakeLeasePaths {
         if let override = ProcessInfo.processInfo.environment["WAKELEASE_STATE_DIR"], override.hasPrefix("/") {
             return URL(fileURLWithPath: override, isDirectory: true)
         }
-        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(WakeLeaseIdentity.name, isDirectory: true)
+        return standardDirectory
+    }
+
+    public static var standardDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(WakeLeaseIdentity.name, isDirectory: true)
     }
 }
 

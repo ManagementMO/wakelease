@@ -6,7 +6,7 @@ import Foundation
 @objc
 public protocol HelperXPCProtocol {
     /// Block (true) or unblock (false) system sleep, including clamshell sleep.
-    /// Idempotent. Returns the actual resulting state.
+    /// Idempotent. Confirms this user's applied demand; other users may independently remain blocked.
     func setSleepBlocked(_ blocked: Bool, reply: @escaping @Sendable (Bool, NSError?) -> Void)
 
     /// Current sleep-blocking state as seen by the helper.

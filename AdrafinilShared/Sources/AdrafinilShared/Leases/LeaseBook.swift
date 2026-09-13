@@ -244,6 +244,27 @@ public struct LeaseBook: Codable, Sendable {
         }
         bootID = currentBoot
         if paused || !cutouts.isEmpty { entries.removeAll() }
+        if entries.count > policy.maxLeases || revisions.count > 4096 || !replayBarrier.isFinite || replayBarrier > time.continuous + 1 {
+            entries.removeAll()
+            revisions.removeAll()
+            replayBarrier = time.continuous
+        }
+        let recovered = entries.filter { key, lease in
+            guard key == lease.key, [.active, .finishing, .waitingForUser].contains(lease.state),
+                  lease.deadline.isFinite, lease.ttlSeconds.isFinite, lease.ttlSeconds > 0,
+                  lease.ttlSeconds <= policy.maximumTTLSeconds,
+                  lease.deadline <= time.continuous + policy.maximumTTLSeconds,
+                  lease.acquiredAt.timeIntervalSince1970.isFinite,
+                  abs(lease.acquiredAt.timeIntervalSince1970) < 1e11,
+                  abs(lease.lastActivityAt.timeIntervalSince1970) < 1e11,
+                  lease.lastHeartbeatAt.map({ abs($0.timeIntervalSince1970) < 1e11 }) ?? true,
+                  lease.waitingUntil.map({ $0.isFinite && $0 <= time.continuous + policy.maximumTTLSeconds + 7200 }) ?? true else { return false }
+            let proposal = LeaseProposal(key: key, source: lease.source, ttlSeconds: lease.ttlSeconds, reason: lease.reason, owner: lease.owner, sessionID: lease.sessionID, metadata: lease.metadata)
+            return (try? validate(proposal)) != nil
+        }
+        entries = recovered
+        revisions = revisions.filter { $0.value.at.isFinite && $0.value.at >= 0 && $0.value.at <= time.continuous + 1 }
+        if let control = lastControl, !control.issuedAt.isFinite || control.issuedAt > time.continuous + 1 { lastControl = nil }
         _ = advance(to: time, identity: identity)
         return finish(before: before, changed: true, events: [event(.recovery, nil)])
     }

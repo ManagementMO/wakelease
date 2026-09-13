@@ -32,6 +32,7 @@ public struct LeaseSnapshot: Codable, Sendable {
 
 public actor LeaseBroker {
     private var book: LeaseBook
+    private var acceptingWork = true
     private let clock: any LeaseClock
     private let identify: @Sendable (Int32) -> ProcessIdentity?
     private let persist: @Sendable (LeaseBook, [LeaseEvent]) -> Void
@@ -71,6 +72,7 @@ public actor LeaseBroker {
 
     @discardableResult
     public func acquire(_ proposal: LeaseProposal, issuedAt: TimeInterval? = nil, peerUID: UInt32? = nil) throws -> LeaseChange {
+        guard acceptingWork else { throw LeaseFailure.paused }
         if let owner = proposal.owner {
             guard (peerUID == nil || owner.uid == peerUID), identify(owner.pid) == owner else { throw LeaseFailure.ownerUnavailable }
         }
@@ -79,7 +81,12 @@ public actor LeaseBroker {
 
     @discardableResult
     public func renew(key: String, ttlSeconds: TimeInterval? = nil, issuedAt: TimeInterval? = nil) throws -> LeaseChange {
-        try mutate { book, time in try book.renew(key: key, ttlSeconds: ttlSeconds, at: time, issuedAt: issuedAt) }
+        guard acceptingWork else { throw LeaseFailure.paused }
+        if let owner = book.leases.first(where: { $0.key == key })?.owner, identify(owner.pid) != owner {
+            sweep()
+            throw LeaseFailure.ownerUnavailable
+        }
+        return try mutate { book, time in try book.renew(key: key, ttlSeconds: ttlSeconds, at: time, issuedAt: issuedAt) }
     }
 
     @discardableResult
@@ -98,7 +105,14 @@ public actor LeaseBroker {
     }
 
     public func control(_ operation: String, issuedAt: TimeInterval) throws -> LeaseChange {
-        try mutate { book, time in try book.control(operation, issuedAt: issuedAt, at: time) }
+        guard acceptingWork else { throw LeaseFailure.paused }
+        return try mutate { book, time in try book.control(operation, issuedAt: issuedAt, at: time) }
+    }
+
+    public func beginShutdown() -> LeaseSnapshot {
+        acceptingWork = false
+        _ = releaseAll()
+        return snapshot()
     }
 
     public func setPaused(_ value: Bool) {

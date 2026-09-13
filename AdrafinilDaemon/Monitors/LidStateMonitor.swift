@@ -35,10 +35,13 @@ final class LidStateMonitor {
         registerNotification()
     }
 
+    func readCurrentState() -> Bool? {
+        guard rootDomain != 0 else { return nil }
+        return IORegistryEntryCreateCFProperty(rootDomain, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Bool
+    }
+
     private func updateLidState() {
-        guard rootDomain != 0 else { return }
-        let propRaw = IORegistryEntryCreateCFProperty(rootDomain, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
-        let closed = (propRaw?.takeRetainedValue() as? Bool) ?? false
+        guard let closed = readCurrentState() else { return }
         if closed != isLidClosed {
             log.notice("lid \(closed ? "CLOSED" : "OPENED", privacy: .public)")
             isLidClosed = closed
