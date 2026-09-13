@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>glass.kagerou.adrafinil.daemon</string>
+    <string>org.wakelease.daemon</string>
     <key>CFBundleName</key>
     <string>AdrafinilDaemon</string>
     <key>CFBundleVersion</key>

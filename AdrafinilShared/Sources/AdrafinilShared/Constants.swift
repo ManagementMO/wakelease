@@ -1,14 +1,18 @@
 import Foundation
 
-public enum AdrafinilConstants {
-    public static let appBundleID = "glass.kagerou.adrafinil"
-    public static let daemonBundleID = "glass.kagerou.adrafinil.daemon"
-    public static let helperBundleID = "glass.kagerou.adrafinil.helper"
+public typealias AdrafinilConstants = WakeLeaseIdentity
 
-    public static let daemonMachServiceName = "glass.kagerou.adrafinil.daemon"
-    public static let helperMachServiceName = "glass.kagerou.adrafinil.helper"
+public enum WakeLeaseIdentity {
+    public static let name = "WakeLease"
+    public static let appBundleID = "org.wakelease"
+    public static let daemonBundleID = appBundleID + ".daemon"
+    public static let helperBundleID = appBundleID + ".helper"
+    public static let cliBundleID = appBundleID + ".cli"
 
-    public static let appSupportDirectoryName = "Adrafinil"
+    public static let daemonMachServiceName = daemonBundleID
+    public static let helperMachServiceName = helperBundleID
+
+    public static let appSupportDirectoryName = name
     public static let cliSocketFilename = "cli.sock"
     public static let stateFilename = "state.json"
     public static let configFilename = "config.json"
@@ -17,11 +21,11 @@ public enum AdrafinilConstants {
     /// Version the daemon, helper, and CLI report over their version endpoints. The app bundle reads
     /// its own `CFBundleShortVersionString`; keep this in step with the project's `MARKETING_VERSION`
     /// at release time so every component agrees on a single number.
-    public static let marketingVersion = "1.7.0"
+    public static let marketingVersion = "0.1.0"
 
-    public static let cliBinaryName = "adrafinil"
-    public static let cliInstallPath = "/usr/local/bin/adrafinil"
-    public static let cliFallbackInstallPath = "\(NSHomeDirectory())/.local/bin/adrafinil"
+    public static let cliBinaryName = "wakelease"
+    public static let cliInstallPath = "/usr/local/bin/" + cliBinaryName
+    public static let cliFallbackInstallPath = "\(NSHomeDirectory())/.local/bin/" + cliBinaryName
 
     public static var appSupportURL: URL {
         let fm = FileManager.default

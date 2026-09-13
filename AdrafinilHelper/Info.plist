@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>glass.kagerou.adrafinil.helper</string>
+    <string>org.wakelease.helper</string>
     <key>CFBundleName</key>
     <string>AdrafinilHelper</string>
     <key>CFBundleVersion</key>
@@ -21,7 +21,7 @@
          so team-signed dev builds still register; pure ad-hoc builds cannot. -->
     <key>SMAuthorizedClients</key>
     <array>
-        <string>identifier "glass.kagerou.adrafinil" and anchor apple generic and certificate leaf[subject.OU] = "52K336H235"</string>
+        <string>identifier "org.wakelease" and anchor apple generic and certificate leaf[subject.OU] = "$(DEVELOPMENT_TEAM)"</string>
     </array>
 </dict>
 </plist>

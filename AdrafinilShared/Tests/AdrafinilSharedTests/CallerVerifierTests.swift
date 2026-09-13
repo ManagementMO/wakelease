@@ -8,9 +8,9 @@ import Testing
 struct CallerVerifierTests {
     @Test
     func `the app bundle id and its sub-identifiers are accepted`() {
-        #expect(CallerVerifier.isAdrafinilComponent("glass.kagerou.adrafinil"))
-        #expect(CallerVerifier.isAdrafinilComponent("glass.kagerou.adrafinil.daemon"))
-        #expect(CallerVerifier.isAdrafinilComponent("glass.kagerou.adrafinil.helper"))
+        #expect(CallerVerifier.isAdrafinilComponent("org.wakelease"))
+        #expect(CallerVerifier.isAdrafinilComponent("org.wakelease.daemon"))
+        #expect(CallerVerifier.isAdrafinilComponent("org.wakelease.helper"))
     }
 
     @Test
@@ -38,7 +38,7 @@ struct CallerVerifierTests {
 }
 
 /// The team check must fail closed: an ad-hoc binary can claim ANY code identifier
-/// (`codesign -s - --identifier glass.kagerou.adrafinil.helper`), so when we are team-signed,
+/// (`codesign -s - --identifier org.wakelease.helper`), so when we are team-signed,
 /// a caller that presents no team — or the wrong one — must be rejected no matter what
 /// identifier it claims.
 @Suite("CallerVerifier authorization decision")
@@ -48,7 +48,7 @@ struct CallerVerifierDecisionTests {
     @Test
     func `team-signed self rejects a caller with no team even with a valid identifier`() {
         #expect(!CallerVerifier.isAuthorizedDecision(
-            ownTeam: team, callerTeam: nil, identifier: "glass.kagerou.adrafinil.helper",
+            ownTeam: team, callerTeam: nil, identifier: "org.wakelease.helper",
         ))
         #expect(!CallerVerifier.isAuthorizedDecision(
             ownTeam: team, callerTeam: nil, identifier: "AdrafinilDaemon",
@@ -58,14 +58,14 @@ struct CallerVerifierDecisionTests {
     @Test
     func `team-signed self rejects a caller from a different team`() {
         #expect(!CallerVerifier.isAuthorizedDecision(
-            ownTeam: team, callerTeam: "EVILTEAM00", identifier: "glass.kagerou.adrafinil",
+            ownTeam: team, callerTeam: "EVILTEAM00", identifier: "org.wakelease",
         ))
     }
 
     @Test
     func `matching team plus component identifier is accepted`() {
         #expect(CallerVerifier.isAuthorizedDecision(
-            ownTeam: team, callerTeam: team, identifier: "glass.kagerou.adrafinil",
+            ownTeam: team, callerTeam: team, identifier: "org.wakelease",
         ))
         #expect(CallerVerifier.isAuthorizedDecision(
             ownTeam: team, callerTeam: team, identifier: "AdrafinilDaemon",
@@ -89,7 +89,7 @@ struct CallerVerifierDecisionTests {
         ))
         // A team-signed caller hitting an ad-hoc build is still held to the identifier list.
         #expect(CallerVerifier.isAuthorizedDecision(
-            ownTeam: nil, callerTeam: team, identifier: "glass.kagerou.adrafinil.daemon",
+            ownTeam: nil, callerTeam: team, identifier: "org.wakelease.daemon",
         ))
     }
 }

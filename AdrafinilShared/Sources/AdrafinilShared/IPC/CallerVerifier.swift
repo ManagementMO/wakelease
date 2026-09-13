@@ -12,7 +12,7 @@ public enum CallerVerifier {
     /// helper) instead sign with their product name as the code identifier — `AdrafinilDaemon` /
     /// `AdrafinilHelper` — because a non-bundle target's identifier defaults to `$(PRODUCT_NAME)`,
     /// not its bundle id. Both shapes are accepted (see `isAdrafinilComponent`).
-    public static let allowedPrefix = "glass.kagerou.adrafinil"
+    public static let allowedPrefix = WakeLeaseIdentity.appBundleID
 
     /// Authorize an incoming XPC peer.
     ///
