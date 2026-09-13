@@ -97,6 +97,10 @@ public actor LeaseBroker {
         mutate { book, time in book.releaseAll(at: time) }
     }
 
+    public func control(_ operation: String, issuedAt: TimeInterval) throws -> LeaseChange {
+        try mutate { book, time in try book.control(operation, issuedAt: issuedAt, at: time) }
+    }
+
     public func setPaused(_ value: Bool) {
         _ = mutate { book, time in book.setPaused(value, at: time) }
     }

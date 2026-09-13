@@ -8,8 +8,10 @@ let package = Package(
         .library(name: "AdrafinilShared", targets: ["AdrafinilShared"]),
     ],
     targets: [
+        .target(name: "WakeLeaseProcess", path: "Sources/WakeLeaseProcess"),
         .target(
             name: "AdrafinilShared",
+            dependencies: ["WakeLeaseProcess"],
             path: "Sources/AdrafinilShared",
             swiftSettings: [
                 .swiftLanguageMode(.v6),

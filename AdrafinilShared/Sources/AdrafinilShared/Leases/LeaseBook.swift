@@ -8,6 +8,11 @@ public struct LeaseBook: Codable, Sendable {
 
     private var entries: [String: WakeLease] = [:]
     private var revisions: [String: Revision] = [:]
+    private struct ControlRevision: Codable, Sendable {
+        let operation: String
+        let issuedAt: TimeInterval
+    }
+    private var lastControl: ControlRevision?
     private var replayBarrier: TimeInterval = -1
     private var now = LeaseTime(wall: Date(timeIntervalSince1970: 0), continuous: 0)
     private var thermalCoolSince: TimeInterval?
@@ -163,6 +168,20 @@ public struct LeaseBook: Codable, Sendable {
         return finish(before: before, changed: !events.isEmpty, events: events)
     }
 
+    public mutating func control(_ operation: String, issuedAt: TimeInterval, at time: LeaseTime) throws -> LeaseChange {
+        guard ["pause", "resume", "releaseAll"].contains(operation) else { throw LeaseFailure.invalidField }
+        guard issuedAt.isFinite, issuedAt >= 0, issuedAt >= time.continuous - 120, issuedAt <= time.continuous + 1 else { throw LeaseFailure.staleRequest }
+        if let lastControl {
+            if lastControl.issuedAt == issuedAt, lastControl.operation == operation {
+                return finish(before: demand, changed: false)
+            }
+            guard issuedAt > lastControl.issuedAt else { throw LeaseFailure.staleRequest }
+        }
+        lastControl = ControlRevision(operation: operation, issuedAt: issuedAt)
+        if operation == "releaseAll" { return releaseAll(at: time) }
+        return setPaused(operation == "pause", at: time)
+    }
+
     public mutating func releaseAll(at time: LeaseTime) -> LeaseChange {
         let before = demand
         now = time
@@ -220,6 +239,7 @@ public struct LeaseBook: Codable, Sendable {
             entries.removeAll()
             revisions.removeAll()
             replayBarrier = -1
+            lastControl = nil
             now = time
         }
         bootID = currentBoot

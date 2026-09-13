@@ -20,7 +20,8 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
     ] : [],
     targets: [
-        .target(name: "AdrafinilShared", path: "AdrafinilShared/Sources/AdrafinilShared"),
+        .target(name: "WakeLeaseProcess", path: "AdrafinilShared/Sources/WakeLeaseProcess"),
+        .target(name: "AdrafinilShared", dependencies: ["WakeLeaseProcess"], path: "AdrafinilShared/Sources/AdrafinilShared"),
         .executableTarget(name: "WakeLeaseCLI", dependencies: ["AdrafinilShared"], path: "AdrafinilCLI"),
         .executableTarget(name: "WakeLeaseDaemon", dependencies: ["AdrafinilShared"], path: "AdrafinilDaemon", exclude: ["Info.plist", "LaunchAgent.plist"]),
         .executableTarget(name: "WakeLeaseHelper", dependencies: ["AdrafinilShared"], path: "AdrafinilHelper", exclude: ["Info.plist", "LaunchDaemon.plist"]),
