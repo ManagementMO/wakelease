@@ -43,6 +43,17 @@ struct SleepBlockPolicyTests {
     }
 
     @Test
+    func `failed startup cleanup remains eligible for reconciliation`() throws {
+        let idle = FakeIdle(), clam = FakeClamshell()
+        clam.throwOn = false
+        let policy = SleepBlockPolicy(idle: idle, clamshell: clam)
+        #expect(policy.needsReconciliation)
+        clam.throwOn = nil
+        try policy.set(blocked: false)
+        #expect(!policy.needsReconciliation)
+    }
+
+    @Test
     func `set(true) acquires the idle assertion and disables clamshell sleep`() throws {
         let idle = FakeIdle(), clam = FakeClamshell()
         let policy = SleepBlockPolicy(idle: idle, clamshell: clam)
@@ -89,13 +100,16 @@ struct SleepBlockPolicyTests {
     }
 
     @Test
-    func `a clamshell failure while unblocking is swallowed (best-effort clear)`() throws {
+    func `a clamshell failure while unblocking remains observable and retryable`() throws {
         let idle = FakeIdle(), clam = FakeClamshell()
         let policy = SleepBlockPolicy(idle: idle, clamshell: clam)
         try policy.set(blocked: true)
         clam.throwOn = false
-        try policy.set(blocked: false) // must not throw
-        #expect(!policy.isBlocked)
+        #expect(throws: FakeClamshell.Boom.self) { try policy.set(blocked: false) } // failure must propagate
+        #expect(policy.isBlocked)
         #expect(!idle.isHeld)
+        clam.throwOn = nil
+        try policy.set(blocked: false)
+        #expect(!policy.isBlocked)
     }
 }

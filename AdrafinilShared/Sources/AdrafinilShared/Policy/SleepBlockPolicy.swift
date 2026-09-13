@@ -5,8 +5,8 @@ import Foundation
 /// assertion is currently held, so a repeated `acquire()` is a no-op.
 public protocol IdleSleepAsserting: AnyObject {
     var isHeld: Bool { get }
-    func acquire()
-    func release()
+    func acquire() throws
+    func release() throws
 }
 
 /// Applies and clears the global clamshell-sleep block — the `SleepDisabled` power setting
@@ -25,11 +25,12 @@ public protocol ClamshellSleepControlling: AnyObject {
 ///
 /// `set(blocked:)` is deliberately **not** short-circuited on an unchanged value: a repeated
 /// `set(true)` re-asserts the clamshell block, which the daemon relies on to recover after a
-/// sleep/wake transition. Every step is idempotent. An error applying the block propagates (the
-/// XPC layer surfaces it); an error *clearing* the block on unblock is swallowed (best-effort —
-/// the conformer logs its own failure), matching the original `SleepBlocker` behavior.
+/// sleep/wake transition. Every step is idempotent. Applying and clearing errors both propagate;
+/// the XPC layer surfaces partial states and the helper retries incomplete reconciliation.
+/// Startup cleanup failure also remains observable rather than being mistaken for a clean state.
 public final class SleepBlockPolicy {
     public private(set) var isBlocked = false
+    public private(set) var needsReconciliation = false
 
     private let idle: IdleSleepAsserting
     private let clamshell: ClamshellSleepControlling
@@ -38,22 +39,32 @@ public final class SleepBlockPolicy {
         self.idle = idle
         self.clamshell = clamshell
         // Crash recovery: clear any stale clamshell block from a prior instance.
-        try? clamshell.setDisabled(false)
+        do { try clamshell.setDisabled(false) }
+        catch { needsReconciliation = true }
     }
 
     public func set(blocked: Bool) throws {
+        needsReconciliation = true
         if blocked {
             // Keep the idle assertion even if the clamshell block throws: partial protection (idle
             // sleep still blocked) serves the app's purpose better than rolling back to none, and the
             // daemon re-issues `set(true)` on its next reconcile — every step is idempotent, so the
             // clamshell block is retried while the idle assertion stays continuously held. The error
             // propagates so the daemon knows the block isn't yet complete.
-            idle.acquire()
+            try idle.acquire()
             try clamshell.setDisabled(true)
+            guard idle.isHeld else { throw SleepBlockFailure.idleAssertionUnavailable }
         } else {
-            idle.release()
-            try? clamshell.setDisabled(false)
+            var failure: Error?
+            do { try idle.release() } catch { failure = error }
+            do { try clamshell.setDisabled(false) } catch { failure = error }
+            if let failure { throw failure }
         }
         isBlocked = blocked
+        needsReconciliation = false
     }
+}
+
+public enum SleepBlockFailure: Error {
+    case idleAssertionUnavailable
 }
