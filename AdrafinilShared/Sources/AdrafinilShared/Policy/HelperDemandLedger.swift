@@ -16,8 +16,12 @@ public struct HelperDemandLedger: Sendable {
         self.disconnectGrace = disconnectGrace
     }
 
-    public var shouldBlock: Bool { claims.values.contains { $0.blocked } }
-    public var nextDeadline: TimeInterval? { claims.values.compactMap(\.deadline).min() }
+    public var shouldBlock: Bool {
+        claims.values.contains { $0.blocked }
+    }
+    public var nextDeadline: TimeInterval? {
+        claims.values.compactMap(\.deadline).min()
+    }
 
     public mutating func connect(uid: UInt32, token: UUID) throws {
         guard uid > 0, claims[uid] != nil || claims.count < 32 else { throw LeaseFailure.capacity }
@@ -54,5 +58,7 @@ public struct HelperDemandLedger: Sendable {
         }
     }
 
-    public mutating func clear() { claims.removeAll() }
+    public mutating func clear() {
+        claims.removeAll()
+    }
 }

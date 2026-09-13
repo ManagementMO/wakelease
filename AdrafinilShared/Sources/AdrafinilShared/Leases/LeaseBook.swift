@@ -82,7 +82,7 @@ public struct LeaseBook: Codable, Sendable {
             sessionID: proposal.sessionID, parentLeaseID: proposal.parentLeaseID, acquiredAt: time.wall,
             lastActivityAt: time.wall, lastHeartbeatAt: nil, expiresAt: time.wall.addingTimeInterval(ttl),
             deadline: time.continuous + ttl, ttlSeconds: ttl, waitingUntil: nil, waitingExpiresAt: nil,
-            metadata: proposal.metadata
+            metadata: proposal.metadata,
         )
         lease.state = .active
         lease.wakeClass = lease.wakeClass == .display ? .display : proposal.wakeClass
@@ -246,7 +246,7 @@ public struct LeaseBook: Codable, Sendable {
         }
         bootID = currentBoot
         if paused || !cutouts.isEmpty { entries.removeAll() }
-        if entries.count > policy.maxLeases || revisions.count > 4096 || !replayBarrier.isFinite || replayBarrier > time.continuous + 1 {
+        if entries.count > policy.maxLeases || revisions.count > 4_096 || !replayBarrier.isFinite || replayBarrier > time.continuous + 1 {
             entries.removeAll()
             revisions.removeAll()
             replayBarrier = time.continuous
@@ -260,7 +260,7 @@ public struct LeaseBook: Codable, Sendable {
                   abs(lease.acquiredAt.timeIntervalSince1970) < 1e11,
                   abs(lease.lastActivityAt.timeIntervalSince1970) < 1e11,
                   lease.lastHeartbeatAt.map({ abs($0.timeIntervalSince1970) < 1e11 }) ?? true,
-                  lease.waitingUntil.map({ $0.isFinite && $0 <= time.continuous + policy.maximumTTLSeconds + 7200 }) ?? true else { return false }
+                  lease.waitingUntil.map({ $0.isFinite && $0 <= time.continuous + policy.maximumTTLSeconds + 7_200 }) ?? true else { return false }
             let proposal = LeaseProposal(key: key, source: lease.source, ttlSeconds: lease.ttlSeconds, reason: lease.reason, owner: lease.owner, sessionID: lease.sessionID, metadata: lease.metadata)
             return (try? validate(proposal)) != nil
         }
@@ -349,7 +349,7 @@ public struct LeaseBook: Codable, Sendable {
         }
         if let previous = revisions[key] {
             guard stamp >= previous.at, !(stamp == previous.at && previous.terminal && !terminal) else { throw LeaseFailure.staleRequest }
-        } else if revisions.count(where: { entries[$0.key] != nil || $0.value.at >= time.continuous - 120 }) >= 4096 {
+        } else if revisions.count(where: { entries[$0.key] != nil || $0.value.at >= time.continuous - 120 }) >= 4_096 {
             throw LeaseFailure.capacity
         }
     }

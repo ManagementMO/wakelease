@@ -3,7 +3,9 @@ import Security
 
 public enum ComponentTrust {
     public enum Role: Sendable {
-        case app, daemon, helper
+        case app
+        case daemon
+        case helper
         var identifier: String {
             switch self {
             case .app: WakeLeaseIdentity.appBundleID

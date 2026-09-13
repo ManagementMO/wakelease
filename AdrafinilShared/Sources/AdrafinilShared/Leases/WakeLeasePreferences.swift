@@ -24,7 +24,7 @@ public struct WakeLeasePreferences: Codable, Sendable, Equatable {
     }
 
     public static func load(from directory: SecureDirectory) throws -> WakeLeasePreferences {
-        guard let data = try directory.read(name: WakeLeaseIdentity.configFilename, maximum: 65536) else { return WakeLeasePreferences() }
+        guard let data = try directory.read(name: WakeLeaseIdentity.configFilename, maximum: 65_536) else { return WakeLeasePreferences() }
         return try JSONDecoder().decode(Self.self, from: data)
     }
 
@@ -35,19 +35,24 @@ public struct WakeLeasePreferences: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, policy, preSleepCue, notifySafety, launchMenuAtLogin, showMenuBar
+        case version
+        case policy
+        case preSleepCue
+        case notifySafety
+        case launchMenuAtLogin
+        case showMenuBar
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let version = try values.decodeIfPresent(Int.self, forKey: .version) ?? 1
         guard version == 1 else { throw DecodingError.dataCorruptedError(forKey: .version, in: values, debugDescription: "Unsupported preferences version") }
-        self.init(
-            policy: try values.decodeIfPresent(LeasePolicy.self, forKey: .policy) ?? LeasePolicy(),
-            preSleepCue: try values.decodeIfPresent(Bool.self, forKey: .preSleepCue) ?? false,
-            notifySafety: try values.decodeIfPresent(Bool.self, forKey: .notifySafety) ?? false,
-            launchMenuAtLogin: try values.decodeIfPresent(Bool.self, forKey: .launchMenuAtLogin) ?? true,
-            showMenuBar: try values.decodeIfPresent(Bool.self, forKey: .showMenuBar) ?? true
+        try self.init(
+            policy: values.decodeIfPresent(LeasePolicy.self, forKey: .policy) ?? LeasePolicy(),
+            preSleepCue: values.decodeIfPresent(Bool.self, forKey: .preSleepCue) ?? false,
+            notifySafety: values.decodeIfPresent(Bool.self, forKey: .notifySafety) ?? false,
+            launchMenuAtLogin: values.decodeIfPresent(Bool.self, forKey: .launchMenuAtLogin) ?? true,
+            showMenuBar: values.decodeIfPresent(Bool.self, forKey: .showMenuBar) ?? true,
         )
     }
 }

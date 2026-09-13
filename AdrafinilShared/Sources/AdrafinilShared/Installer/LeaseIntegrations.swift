@@ -87,8 +87,7 @@ public enum LeaseIntegrations {
         }
         """
         if integration.format == .piPlugin {
-            return common + """
-
+            return common + "\n" + """
             export default function (pi) {
               const id = ctx => ctx?.sessionManager?.getSessionId?.() ?? String(process.pid)
               pi.on("agent_start", async (_event, ctx) => send("start", id(ctx)))
@@ -96,11 +95,9 @@ public enum LeaseIntegrations {
               pi.on("session_shutdown", async (_event, ctx) => send("stop", id(ctx)))
               pi.on("tool_result", async (_event, ctx) => send("heartbeat", id(ctx)))
             }
-
-            """
+            """ + "\n"
         }
-        return common + """
-
+        return common + "\n" + """
         export const WakeLease = async () => ({
           event: async ({ event }) => {
             const p = event.properties ?? event.data ?? {}
@@ -114,7 +111,6 @@ public enum LeaseIntegrations {
           },
           "tool.execute.after": async (input) => send("heartbeat", input.sessionID)
         })
-
-        """
+        """ + "\n"
     }
 }

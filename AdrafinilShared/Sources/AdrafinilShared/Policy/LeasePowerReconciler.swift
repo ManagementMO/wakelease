@@ -91,7 +91,9 @@ public actor LeasePowerReconciler {
     }
 
     public func flush() async {
-        while let worker { await worker.value }
+        while let worker {
+            await worker.value
+        }
     }
 
     private func drain() async {
@@ -157,6 +159,8 @@ public actor LeasePowerReconciler {
         onChange()
         let ready = waiters.filter { $0.token <= completed }
         waiters.removeAll { $0.token <= completed }
-        for waiter in ready { waiter.continuation.resume(returning: result) }
+        for waiter in ready {
+            waiter.continuation.resume(returning: result)
+        }
     }
 }

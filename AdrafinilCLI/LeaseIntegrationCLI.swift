@@ -28,15 +28,17 @@ enum LeaseHookCommand {
 
 enum LeaseIntegrationCLI {
     static func run(_ plan: LeaseCLIPlan) throws -> Int32 {
-        let allowed: Set<String> = ["--home", "--state-dir", "--dry-run", "--yes", "--json", "--help"]
+        let allowed: Set = ["--home", "--state-dir", "--dry-run", "--yes", "--json", "--help"]
         guard Set(plan.values.keys).union(plan.flags).isSubset(of: allowed) else { throw LeaseCLIUsageError("Unsupported integration option.") }
         let manager = LeaseIntegrationManager(home: URL(fileURLWithPath: plan.values["--home"] ?? NSHomeDirectory(), isDirectory: true), stateDirectory: plan.directory, cliPath: HookCommandSupport.canonicalCLIPath())
         let operation = plan.positionals.first ?? "list"
         if operation == "list" {
             let health = LeaseIntegrations.all.map { manager.health($0.id) }
-            if plan.flags.contains("--json") { print(String(decoding: try LeaseJSON.encode(health), as: UTF8.self)) }
+            if plan.flags.contains("--json") { try print(String(decoding: LeaseJSON.encode(health), as: UTF8.self)) }
             else {
-                for item in health { print("\(item.id)  \(item.state)\n  \(item.note)") }
+                for item in health {
+                    print("\(item.id)  \(item.state)\n  \(item.note)")
+                }
             }
             return 0
         }
@@ -78,10 +80,10 @@ enum LeaseIntegrationCLI {
         if source == "hermes" {
             func yaml(_ action: String) throws -> String {
                 let text = cli + " hook hermes " + action
-                return String(decoding: try JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed, .withoutEscapingSlashes]), as: UTF8.self)
+                return try String(decoding: JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed, .withoutEscapingSlashes]), as: UTF8.self)
             }
             print("Merge these entries into your existing hooks mapping; do not replace other hooks. Approve them in Hermes.")
-            print("hooks:\n  pre_llm_call:\n    - command: \(try yaml("start"))\n  on_session_end:\n    - command: \(try yaml("stop"))")
+            try print("hooks:\n  pre_llm_call:\n    - command: \(yaml("start"))\n  on_session_end:\n    - command: \(yaml("stop"))")
             return 0
         }
         let variable = plan.values["--session-variable"] ?? "SESSION_ID"

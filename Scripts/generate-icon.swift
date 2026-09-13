@@ -16,7 +16,7 @@ func draw(size: Int) -> Data {
     let graphics = NSGraphicsContext(bitmapImageRep: bitmap)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = graphics
-    graphics.cgContext.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
+    graphics.cgContext.scaleBy(x: CGFloat(size) / 1_024, y: CGFloat(size) / 1_024)
     let background = color(21, 32, 53)
     let blue = color(57, 111, 216)
     let paper = color(240, 245, 253)

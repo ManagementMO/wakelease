@@ -12,5 +12,7 @@ public struct EarliestDeadline: Sendable {
         return true
     }
 
-    public mutating func fired() { value = nil }
+    public mutating func fired() {
+        value = nil
+    }
 }

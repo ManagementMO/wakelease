@@ -12,7 +12,9 @@ private actor StartupGate {
     }
     func open() {
         ready = true
-        for waiter in waiters { waiter.resume() }
+        for waiter in waiters {
+            waiter.resume()
+        }
         waiters.removeAll()
     }
 }
@@ -21,9 +23,13 @@ final class LeasePersistence: Sendable {
     let directory: SecureDirectory
     private let errorState = OSAllocatedUnfairLock<String?>(initialState: nil)
     private let eventLines = OSAllocatedUnfairLock(initialState: [Data]())
-    var error: String? { errorState.withLock { $0 } }
+    var error: String? {
+        errorState.withLock { $0 }
+    }
 
-    init(directory: SecureDirectory) { self.directory = directory }
+    init(directory: SecureDirectory) {
+        self.directory = directory
+    }
 
     func save(_ book: LeaseBook, events: [LeaseEvent]) {
         do {
@@ -152,7 +158,7 @@ final class LeaseDaemonRuntime {
                 self.notifyStatus()
             }
         }
-        scheduleMaintenance(await broker.snapshot())
+        await scheduleMaintenance(broker.snapshot())
         await gate.open()
         log.notice("daemon_started — mode=\(self.simulation ? "simulation" : "system", privacy: .public)")
     }
@@ -174,8 +180,8 @@ final class LeaseDaemonRuntime {
 
     private func synchronizePower(force: Bool = false) async {
         guard !stopping, let broker, let driver else { return }
-        _ = await driver.reconcile(intent(await broker.snapshot()), force: force)
-        scheduleMaintenance(await broker.snapshot())
+        _ = await driver.reconcile(intent(broker.snapshot()), force: force)
+        await scheduleMaintenance(broker.snapshot())
         notifyStatus()
     }
 
@@ -224,7 +230,7 @@ final class LeaseDaemonRuntime {
             await self.refreshSafety()
             let current = await broker.snapshot()
             await self.synchronizePower(force: current.demand.system)
-            self.scheduleMaintenance(await broker.snapshot())
+            await self.scheduleMaintenance(broker.snapshot())
         }
     }
 

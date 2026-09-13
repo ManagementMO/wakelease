@@ -7,7 +7,12 @@ struct ManagedLeaseHook: Codable, Sendable, Equatable {
 }
 
 public enum LeaseIntegrationFailure: Error, LocalizedError {
-    case unreadable, modified, unmanaged, concurrentModification, invalidReceipt, manual(String)
+    case unreadable
+    case modified
+    case unmanaged
+    case concurrentModification
+    case invalidReceipt
+    case manual(String)
 
     public var errorDescription: String? {
         switch self {

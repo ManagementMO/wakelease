@@ -29,11 +29,11 @@ guard getuid() != 0, simulate || (ComponentTrust.currentTeam != nil && directory
 }
 let daemon = LeaseDaemonRuntime(directory: directory, simulation: simulate)
 
-// SIGTERM (launchctl bootout, logout, system shutdown) must clear the helper's sleep block
-// before exit: `disablesleep` is a persistent power-management pref that survives this process —
-// and the helper, and even a reboot — so an unload while blocked would otherwise leave the Mac
-// unable to sleep with nothing left to fix it. The dispatch source delivers the signal on the
-// main queue, where the MainActor daemon can run its bounded cleanup.
+/// SIGTERM (launchctl bootout, logout, system shutdown) must clear the helper's sleep block
+/// before exit: `disablesleep` is a persistent power-management pref that survives this process —
+/// and the helper, and even a reboot — so an unload while blocked would otherwise leave the Mac
+/// unable to sleep with nothing left to fix it. The dispatch source delivers the signal on the
+/// main queue, where the MainActor daemon can run its bounded cleanup.
 let signalSources = [SIGTERM, SIGINT].map { value in
     signal(value, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: value, queue: .main)

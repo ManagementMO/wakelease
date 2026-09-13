@@ -11,7 +11,8 @@ struct LeaseTransportTests {
         return url
     }
 
-    @Test func framedProtocolHandlesRealLocalRoundTrips() async throws {
+    @Test
+    func `framed protocol handles real local round trips`() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = LeaseProtocolService(broker: LeaseBroker(), mode: "simulation")
@@ -31,7 +32,8 @@ struct LeaseTransportTests {
         #expect(permissions == 0o600)
     }
 
-    @Test func protocolVersionsAndUnknownOperationsReturnStructuredErrors() async {
+    @Test
+    func `protocol versions and unknown operations return structured errors`() async {
         let service = LeaseProtocolService(broker: LeaseBroker(), mode: "simulation")
         let peer = LocalPeer(uid: getuid(), pid: getpid())
         var request = LeaseRequest(operation: "status")
@@ -41,7 +43,8 @@ struct LeaseTransportTests {
         #expect(await service.handle(LeaseRequest(operation: "acquire", key: "a", source: "x"), peer: LocalPeer(uid: getuid() + 1, pid: 1)).error?.code == "unauthorized_peer")
     }
 
-    @Test func concurrentClientsAreReferenceCounted() async throws {
+    @Test
+    func `concurrent clients are reference counted`() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = LeaseProtocolService(broker: LeaseBroker(), mode: "simulation")
@@ -50,8 +53,8 @@ struct LeaseTransportTests {
         defer { server.stop() }
         let client = LeaseSocketClient(directory: directory)
         try await withThrowingTaskGroup(of: Void.self) { group in
-            for index in 0..<12 {
-                group.addTask { () async throws -> Void in
+            for index in 0 ..< 12 {
+                group.addTask { () async throws in
                     let reply = try await client.sendAsync(LeaseRequest(operation: "acquire", key: "client-\(index)"))
                     #expect(reply.ok)
                 }
@@ -62,7 +65,8 @@ struct LeaseTransportTests {
         #expect(try await client.sendAsync(LeaseRequest(operation: "releaseAll")).status?.snapshot.effectiveCount == 0)
     }
 
-    @Test func secondDaemonDoesNotUnlinkFirstDaemonsSocket() async throws {
+    @Test
+    func `second daemon does not unlink first daemons socket`() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = LeaseProtocolService(broker: LeaseBroker(), mode: "simulation")
@@ -74,7 +78,8 @@ struct LeaseTransportTests {
         #expect(try await LeaseSocketClient(directory: directory).sendAsync(LeaseRequest(operation: "status")).ok)
     }
 
-    @Test func foreignSocketPathIsNeverOverwritten() throws {
+    @Test
+    func `foreign socket path is never overwritten`() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("cli.sock")
@@ -84,7 +89,8 @@ struct LeaseTransportTests {
         #expect(try String(contentsOf: path, encoding: .utf8) == "unrelated")
     }
 
-    @Test func symlinkedStateDirectoryIsRejected() throws {
+    @Test
+    func `symlinked state directory is rejected`() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let link = directory.appendingPathComponent("link")
@@ -92,7 +98,8 @@ struct LeaseTransportTests {
         #expect(throws: (any Error).self) { _ = try SecureDirectory(url: link, create: false) }
     }
 
-    @Test func privateStateWritesAreAtomicAndRejectSymlinks() throws {
+    @Test
+    func `private state writes are atomic and reject symlinks`() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let storage = try SecureDirectory(url: directory, create: false)
@@ -104,7 +111,8 @@ struct LeaseTransportTests {
         #expect(try storage.read(name: "state.json") == Data("second".utf8))
     }
 
-    @Test func replayedReleaseAllCannotReleaseNewWork() async throws {
+    @Test
+    func `replayed release all cannot release new work`() async throws {
         let broker = LeaseBroker()
         let service = LeaseProtocolService(broker: broker, mode: "simulation")
         let peer = LocalPeer(uid: getuid(), pid: getpid())
@@ -115,7 +123,8 @@ struct LeaseTransportTests {
         #expect(await broker.snapshot().effectiveCount == 1)
     }
 
-    @Test func aStaleResumeCannotUndoAPause() async {
+    @Test
+    func `a stale resume cannot undo A pause`() async {
         let broker = LeaseBroker()
         let service = LeaseProtocolService(broker: broker, mode: "simulation")
         let peer = LocalPeer(uid: getuid(), pid: getpid())
@@ -125,9 +134,10 @@ struct LeaseTransportTests {
         #expect(await broker.snapshot().paused)
     }
 
-    @Test func malformedFramesAreRejectedBeforeAllocation() {
-        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([255, 255, 255, 255]), maximum: 65536) }
-        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([0, 0]), maximum: 65536) }
-        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([0, 0, 0, 0]), maximum: 65536) }
+    @Test
+    func `malformed frames are rejected before allocation`() {
+        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([255, 255, 255, 255]), maximum: 65_536) }
+        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([0, 0]), maximum: 65_536) }
+        #expect(throws: (any Error).self) { try LeaseFrames.decodeLength(Data([0, 0, 0, 0]), maximum: 65_536) }
     }
 }

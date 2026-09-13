@@ -29,5 +29,5 @@ let package = Package(
         .executableTarget(name: "WakeLeaseHelper", dependencies: ["AdrafinilShared"], path: "AdrafinilHelper", exclude: ["Info.plist", "LaunchDaemon.plist"]),
         .testTarget(name: "AdrafinilSharedTests", dependencies: testDependencies, path: "AdrafinilShared/Tests/AdrafinilSharedTests"),
     ],
-    swiftLanguageModes: [.v6]
+    swiftLanguageModes: [.v6],
 )

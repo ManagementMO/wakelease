@@ -4,7 +4,9 @@ import Foundation
 public struct LocalPeer: Sendable {
     public let uid: UInt32
     public let pid: Int32
-    public init(uid: UInt32, pid: Int32) { self.uid = uid; self.pid = pid }
+    public init(uid: UInt32, pid: Int32) {
+        self.uid = uid; self.pid = pid
+    }
 }
 
 public struct LeaseRequest: Codable, Sendable {
@@ -47,7 +49,9 @@ public struct LeaseRequest: Codable, Sendable {
 public struct LeaseProtocolError: Codable, Sendable {
     public let code: String
     public let message: String
-    public init(code: String, message: String) { self.code = code; self.message = message }
+    public init(code: String, message: String) {
+        self.code = code; self.message = message
+    }
 }
 
 public struct LeasePowerReport: Codable, Sendable {
@@ -139,7 +143,7 @@ public struct LeaseProtocolService: Sendable {
     public func handle(_ request: LeaseRequest, peer: LocalPeer) async -> LeaseReply {
         guard peer.uid == getuid() else { return failure(request, "unauthorized_peer", "Only the daemon's user may access this socket.") }
         guard request.version == 1 else { return failure(request, "unsupported_version", "Supported protocol versions: 1.") }
-        let operations: Set<String> = ["acquire", "hold", "renew", "wait", "release", "releaseAll", "pause", "resume", "status", "doctor", "ping", "settings", "configure"]
+        let operations: Set = ["acquire", "hold", "renew", "wait", "release", "releaseAll", "pause", "resume", "status", "doctor", "ping", "settings", "configure"]
         guard operations.contains(request.operation) else { return failure(request, "unknown_operation", "Unknown lease operation.") }
         let mutates = !["status", "doctor", "ping", "settings"].contains(request.operation)
         let initial = await broker.snapshot()

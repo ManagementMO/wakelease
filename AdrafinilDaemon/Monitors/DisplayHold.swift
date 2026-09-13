@@ -28,7 +28,9 @@ final class DisplayHold {
     }
     private var isHeld = false
     private(set) var lastError: IOReturn?
-    var isActive: Bool { isHeld }
+    var isActive: Bool {
+        isHeld
+    }
     /// Reused across `IOPMAssertionDeclareUserActivity` calls, as its contract asks: pass the
     /// previous id back in and the system refreshes that assertion instead of minting anew.
     private var userActivityID: IOPMAssertionID {
@@ -63,7 +65,7 @@ final class DisplayHold {
             var failure: IOReturn?
             let cleared = slots.releaseAll { id in
                 let result = IOPMAssertionRelease(id)
-                if result != kIOReturnSuccess && result != kIOReturnNotFound { failure = result; return false }
+                if result != kIOReturnSuccess, result != kIOReturnNotFound { failure = result; return false }
                 return true
             }
             isHeld = slots.display != 0

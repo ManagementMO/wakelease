@@ -25,15 +25,27 @@ public struct ProcessIdentity: Codable, Sendable, Hashable {
 }
 
 public enum WakeClass: String, Codable, Sendable, CaseIterable {
-    case system, display
+    case system
+    case display
 }
 
 public enum LeaseSourceKind: String, Codable, Sendable, CaseIterable {
-    case custom, hook, command, process, timed, mcp, heuristic
+    case custom
+    case hook
+    case command
+    case process
+    case timed
+    case mcp
+    case heuristic
 }
 
 public enum LeaseState: String, Codable, Sendable {
-    case active, waitingForUser, finishing, expired, released, cutOut
+    case active
+    case waitingForUser
+    case finishing
+    case expired
+    case released
+    case cutOut
 }
 
 public struct LeaseProposal: Codable, Sendable {
@@ -137,7 +149,14 @@ public struct LeaseChange: Sendable {
 }
 
 public enum LeaseFailure: String, Error, Codable, Sendable, LocalizedError {
-    case staleRequest, invalidTTL, invalidField, capacity, unknownLease, paused, safetyCutout, ownerUnavailable
+    case staleRequest
+    case invalidTTL
+    case invalidField
+    case capacity
+    case unknownLease
+    case paused
+    case safetyCutout
+    case ownerUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -168,7 +187,7 @@ public struct LeasePolicy: Codable, Sendable, Equatable {
         self.maximumTTLSeconds = maximumTTLSeconds.isFinite ? min(86_400, max(1, maximumTTLSeconds)) : 86_400
         self.defaultTTLSeconds = defaultTTLSeconds.isFinite ? min(self.maximumTTLSeconds, max(1, defaultTTLSeconds)) : min(self.maximumTTLSeconds, 14_400)
         self.waitingPolicy = waitingPolicy
-        self.waitingGraceSeconds = waitingGraceSeconds.isFinite ? min(7200, max(0, waitingGraceSeconds)) : 600
+        self.waitingGraceSeconds = waitingGraceSeconds.isFinite ? min(7_200, max(0, waitingGraceSeconds)) : 600
         self.maxLeases = min(128, max(1, maxLeases))
         self.maxLeasesPerOwner = min(32, max(1, maxLeasesPerOwner))
         self.batteryCutoff = min(50, max(10, batteryCutoff))
@@ -181,31 +200,44 @@ public struct LeasePolicy: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case defaultTTLSeconds, maximumTTLSeconds, waitingPolicy, waitingGraceSeconds, maxLeases, maxLeasesPerOwner, batteryCutoff, thermalCutoff, sleepClosedLidOnFinalRelease
+        case defaultTTLSeconds
+        case maximumTTLSeconds
+        case waitingPolicy
+        case waitingGraceSeconds
+        case maxLeases
+        case maxLeasesPerOwner
+        case batteryCutoff
+        case thermalCutoff
+        case sleepClosedLidOnFinalRelease
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(
-            defaultTTLSeconds: try values.decodeIfPresent(Double.self, forKey: .defaultTTLSeconds) ?? 14_400,
-            maximumTTLSeconds: try values.decodeIfPresent(Double.self, forKey: .maximumTTLSeconds) ?? 86_400,
-            waitingPolicy: try values.decodeIfPresent(AgentWaitingPolicy.self, forKey: .waitingPolicy) ?? .grace,
-            waitingGraceSeconds: try values.decodeIfPresent(Double.self, forKey: .waitingGraceSeconds) ?? 600,
-            maxLeases: try values.decodeIfPresent(Int.self, forKey: .maxLeases) ?? 128,
-            maxLeasesPerOwner: try values.decodeIfPresent(Int.self, forKey: .maxLeasesPerOwner) ?? 32,
-            batteryCutoff: try values.decodeIfPresent(Int.self, forKey: .batteryCutoff) ?? 20,
-            thermalCutoff: try values.decodeIfPresent(Double.self, forKey: .thermalCutoff) ?? 80,
-            sleepClosedLidOnFinalRelease: try values.decodeIfPresent(Bool.self, forKey: .sleepClosedLidOnFinalRelease) ?? true
+        try self.init(
+            defaultTTLSeconds: values.decodeIfPresent(Double.self, forKey: .defaultTTLSeconds) ?? 14_400,
+            maximumTTLSeconds: values.decodeIfPresent(Double.self, forKey: .maximumTTLSeconds) ?? 86_400,
+            waitingPolicy: values.decodeIfPresent(AgentWaitingPolicy.self, forKey: .waitingPolicy) ?? .grace,
+            waitingGraceSeconds: values.decodeIfPresent(Double.self, forKey: .waitingGraceSeconds) ?? 600,
+            maxLeases: values.decodeIfPresent(Int.self, forKey: .maxLeases) ?? 128,
+            maxLeasesPerOwner: values.decodeIfPresent(Int.self, forKey: .maxLeasesPerOwner) ?? 32,
+            batteryCutoff: values.decodeIfPresent(Int.self, forKey: .batteryCutoff) ?? 20,
+            thermalCutoff: values.decodeIfPresent(Double.self, forKey: .thermalCutoff) ?? 80,
+            sleepClosedLidOnFinalRelease: values.decodeIfPresent(Bool.self, forKey: .sleepClosedLidOnFinalRelease) ?? true,
         )
     }
 }
 
 public enum LeaseThermalState: String, Codable, Sendable {
-    case nominal, fair, serious, critical, unknown
+    case nominal
+    case fair
+    case serious
+    case critical
+    case unknown
 }
 
 public enum LeaseCutout: String, Codable, Sendable {
-    case thermal, lowBattery
+    case thermal
+    case lowBattery
 }
 
 public struct LeaseSafety: Codable, Sendable, Equatable {
@@ -219,7 +251,7 @@ public struct LeaseSafety: Codable, Sendable, Equatable {
     public init(lidClosed: Bool? = nil, externalDisplayConnected: Bool? = nil, batteryPercent: Int? = nil, onBattery: Bool? = nil, temperatureCelsius: Double? = nil, thermalState: LeaseThermalState = .nominal) {
         self.lidClosed = lidClosed
         self.externalDisplayConnected = externalDisplayConnected
-        self.batteryPercent = batteryPercent.flatMap { (0...100).contains($0) ? $0 : nil }
+        self.batteryPercent = batteryPercent.flatMap { (0 ... 100).contains($0) ? $0 : nil }
         self.onBattery = onBattery
         self.temperatureCelsius = temperatureCelsius.flatMap { $0.isFinite && $0 > 0 && $0 < 150 ? $0 : nil }
         self.thermalState = thermalState

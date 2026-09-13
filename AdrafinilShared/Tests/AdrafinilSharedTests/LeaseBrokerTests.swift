@@ -1,20 +1,23 @@
 import Foundation
-import Testing
 import os
+import Testing
 @testable import AdrafinilShared
 
 @Suite("Lease broker concurrency")
 struct LeaseBrokerTests {
-    @Test func concurrentAcquiresCannotOversubscribeRegistry() async throws {
+    @Test
+    func `concurrent acquires cannot oversubscribe registry`() async {
         let broker = LeaseBroker(policy: LeasePolicy(maxLeases: 16))
         let accepted = await withTaskGroup(of: Bool.self) { group in
-            for index in 0..<64 {
+            for index in 0 ..< 64 {
                 group.addTask {
-                    (try? await broker.acquire(LeaseProposal(key: "job-\(index)", source: "build"))) != nil
+                    await (try? broker.acquire(LeaseProposal(key: "job-\(index)", source: "build"))) != nil
                 }
             }
             var count = 0
-            for await didAcquire in group where didAcquire { count += 1 }
+            for await didAcquire in group where didAcquire {
+                count += 1
+            }
             return count
         }
         #expect(accepted == 16)
@@ -28,7 +31,8 @@ struct LeaseBrokerTests {
         #expect(await broker.snapshot().demand == .none)
     }
 
-    @Test func aNewAcquireRacingFinalReleaseCannotLeaveAStaleSnapshot() async throws {
+    @Test
+    func `a new acquire racing final release cannot leave A stale snapshot`() async throws {
         let broker = LeaseBroker()
         _ = try await broker.acquire(LeaseProposal(key: "old"))
         async let release = broker.release(key: "old")
@@ -41,7 +45,8 @@ struct LeaseBrokerTests {
         #expect(await iterator.next()?.generation == snapshot.generation)
     }
 
-    @Test func aCutoutRacingAnAcquireCannotBeBypassed() async {
+    @Test
+    func `a cutout racing an acquire cannot be bypassed`() async {
         let broker = LeaseBroker()
         async let acquisition = try? broker.acquire(LeaseProposal(key: "job"))
         async let hazard: Void = broker.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 100, thermalState: .critical))
@@ -55,7 +60,8 @@ struct LeaseBrokerTests {
         }
     }
 
-    @Test func ownerPIDMustBelongToAuthenticatedUser() async throws {
+    @Test
+    func `owner PID must belong to authenticated user`() async throws {
         let broker = LeaseBroker()
         let identity = try #require(SystemProcessIdentity.read(getpid()))
         let proposal = LeaseProposal(key: "owned", owner: identity)
@@ -69,7 +75,8 @@ struct LeaseBrokerTests {
         #expect(await broker.snapshot().effectiveCount == 1)
     }
 
-    @Test func processBirthIdentityIsStableAndInvalidPIDsAreRejected() throws {
+    @Test
+    func `process birth identity is stable and invalid PI ds are rejected`() throws {
         let first = try #require(SystemProcessIdentity.read(getpid()))
         #expect(first == SystemProcessIdentity.read(getpid()))
         #expect(first.uid == getuid())
@@ -78,7 +85,8 @@ struct LeaseBrokerTests {
         #expect(SystemProcessIdentity.read(0) == nil)
     }
 
-    @Test func renewCannotKeepADeadOwnerAlive() async throws {
+    @Test
+    func `renew cannot keep A dead owner alive`() async throws {
         let identity = ProcessIdentity(pid: 42, uid: 501, startSeconds: 100, startMicroseconds: 0)
         let live = OSAllocatedUnfairLock<ProcessIdentity?>(initialState: identity)
         let broker = LeaseBroker(identify: { _ in live.withLock { $0 } })
@@ -91,7 +99,8 @@ struct LeaseBrokerTests {
         #expect(await broker.snapshot().demand == .none)
     }
 
-    @Test func shutdownClosesAdmissionWithoutPersistingAUserPause() async throws {
+    @Test
+    func `shutdown closes admission without persisting A user pause`() async throws {
         let broker = LeaseBroker()
         _ = try await broker.acquire(LeaseProposal(key: "a"))
         let stopped = await broker.beginShutdown()
@@ -103,7 +112,8 @@ struct LeaseBrokerTests {
         } catch { #expect(error as? LeaseFailure == .paused) }
     }
 
-    @Test func safetyLatchSurvivesBrokerRestart() async throws {
+    @Test
+    func `safety latch survives broker restart`() async throws {
         let broker = LeaseBroker()
         _ = try await broker.acquire(LeaseProposal(key: "a"))
         await broker.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 95, thermalState: .critical))

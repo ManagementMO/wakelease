@@ -30,13 +30,12 @@ final class LeaseDeviceMonitor {
 
     func sample(includeTemperature: Bool) -> LeaseSafety {
         let reading = BatteryMonitor.read()
-        let thermal: LeaseThermalState
-        switch ProcessInfo.processInfo.thermalState {
-        case .nominal: thermal = .nominal
-        case .fair: thermal = .fair
-        case .serious: thermal = .serious
-        case .critical: thermal = .critical
-        @unknown default: thermal = .unknown
+        let thermal: LeaseThermalState = switch ProcessInfo.processInfo.thermalState {
+        case .nominal: .nominal
+        case .fair: .fair
+        case .serious: .serious
+        case .critical: .critical
+        @unknown default: .unknown
         }
         return LeaseSafety(lidClosed: lid.readCurrentState(), externalDisplayConnected: Self.externalDisplayConnected(), batteryPercent: reading?.percent, onBattery: reading?.onBattery, temperatureCelsius: includeTemperature ? smc.readCPUTemperature() : nil, thermalState: thermal)
     }

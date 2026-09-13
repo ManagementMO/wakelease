@@ -61,7 +61,7 @@ final class HelperPowerController: @unchecked Sendable {
 
     private func schedule() {
         let now = SystemLeaseClock().now().continuous
-        let desired = [ledger.nextDeadline, blocker.needsReconciliation ? now + 5 : nil].compactMap { $0 }.min()
+        let desired = [ledger.nextDeadline, blocker.needsReconciliation ? now + 5 : nil].compactMap(\.self).min()
         guard nextTick.arm(desired) else { return }
         timer?.cancel()
         timer = nil

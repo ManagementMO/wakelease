@@ -16,7 +16,9 @@ private actor PowerTestGate {
     func waitUntilEntered() async {
         if !entered { await withCheckedContinuation { enterWaiters.append($0) } }
     }
-    func release() { released = true; waiter?.resume(); waiter = nil }
+    func release() {
+        released = true; waiter?.resume(); waiter = nil
+    }
 }
 
 private actor FakeLeasePower: LeasePowerControlling {
@@ -40,9 +42,15 @@ private actor FakeLeasePower: LeasePowerControlling {
         applied.append(demand)
         if !demand.system { await releaseGate?.hold() }
     }
-    func prepareForRelease() async { cues += 1; await cueGate?.hold() }
-    func requestSleep() async throws { sleepRequests += 1 }
-    func connectionReport() async -> LeasePowerReport { LeasePowerReport(helperConnected: true) }
+    func prepareForRelease() async {
+        cues += 1; await cueGate?.hold()
+    }
+    func requestSleep() async throws {
+        sleepRequests += 1
+    }
+    func connectionReport() async -> LeasePowerReport {
+        LeasePowerReport(helperConnected: true)
+    }
 }
 
 @Suite("Serialized power reconciliation")
@@ -52,7 +60,8 @@ struct LeasePowerReconcilerTests {
         LeasePowerIntent(version: version, demand: demand, lidClosed: closed, externalDisplay: external, promptSleep: prompt, cue: true)
     }
 
-    @Test func onlyDemandEdgesChangePower() async {
+    @Test
+    func `only demand edges change power`() async {
         let power = FakeLeasePower()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(0, .none))
@@ -65,7 +74,8 @@ struct LeasePowerReconcilerTests {
         #expect(await power.sleepRequests == 0)
     }
 
-    @Test func acquireDuringCueCancelsTheQueuedUnblock() async {
+    @Test
+    func `acquire during cue cancels the queued unblock`() async {
         let power = FakeLeasePower(), gate = PowerTestGate()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(1, awake))
@@ -81,7 +91,8 @@ struct LeasePowerReconcilerTests {
         #expect(await power.sleepRequests == 0)
     }
 
-    @Test func newAcquireDuringUnblockCannotLeaveAStaleFalseState() async {
+    @Test
+    func `new acquire during unblock cannot leave A stale false state`() async {
         let power = FakeLeasePower(), gate = PowerTestGate()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(1, awake))
@@ -97,7 +108,8 @@ struct LeasePowerReconcilerTests {
         #expect(await power.sleepRequests == 0)
     }
 
-    @Test func failedUnblockIsReportedAndRetriedEvenWithZeroLeases() async {
+    @Test
+    func `failed unblock is reported and retried even with zero leases`() async {
         let power = FakeLeasePower(), gate = PowerTestGate()
         let driver = LeasePowerReconciler(controller: power, retry: { _ in await gate.hold() })
         _ = await driver.reconcile(intent(1, awake))
@@ -112,7 +124,8 @@ struct LeasePowerReconcilerTests {
         #expect(await power.attempts == [awake, .none, .none])
     }
 
-    @Test func promptSleepRequiresClosedLidAndKnownAbsenceOfExternalDisplays() async {
+    @Test
+    func `prompt sleep requires closed lid and known absence of external displays`() async {
         for (closed, external, prompt, expected) in [(true as Bool?, false as Bool?, true, 1), (false, false, true, 0), (true, true, true, 0), (true, nil, true, 0), (nil, false, true, 0), (true, false, false, 0)] {
             let power = FakeLeasePower()
             let driver = LeasePowerReconciler(controller: power)
@@ -123,7 +136,8 @@ struct LeasePowerReconcilerTests {
         }
     }
 
-    @Test func staleGenerationCannotOverrideNewWork() async {
+    @Test
+    func `stale generation cannot override new work`() async {
         let power = FakeLeasePower()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(3, awake))
@@ -131,7 +145,8 @@ struct LeasePowerReconcilerTests {
         #expect(await power.applied == [awake])
     }
 
-    @Test func disconnectedHelperInvalidatesPreviouslyConfirmedProtection() async {
+    @Test
+    func `disconnected helper invalidates previously confirmed protection`() async {
         let power = FakeLeasePower()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(1, awake))
@@ -141,7 +156,8 @@ struct LeasePowerReconcilerTests {
         #expect(await driver.report().applied == awake)
     }
 
-    @Test func forcedReconciliationReappliesForWakeAndHelperReconnect() async {
+    @Test
+    func `forced reconciliation reapplies for wake and helper reconnect`() async {
         let power = FakeLeasePower()
         let driver = LeasePowerReconciler(controller: power)
         _ = await driver.reconcile(intent(1, awake))

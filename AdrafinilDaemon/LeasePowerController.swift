@@ -6,10 +6,12 @@ import IOKit.pwr_mgt
 import OSLog
 
 actor SimulatedLeasePowerController: LeasePowerControlling {
-    func apply(_ demand: WakeDemand) async throws {}
+    func apply(_: WakeDemand) async throws {}
     func prepareForRelease() async {}
     func requestSleep() async throws {}
-    func connectionReport() async -> LeasePowerReport { LeasePowerReport() }
+    func connectionReport() async -> LeasePowerReport {
+        LeasePowerReport()
+    }
 }
 
 @MainActor
@@ -65,5 +67,7 @@ final class SystemLeasePowerController: LeasePowerControlling {
         LeasePowerReport(error: issue, helperConnected: helper.isConnected, globalBlocked: globalBlocked)
     }
 
-    func disconnect() { helper.disconnect() }
+    func disconnect() {
+        helper.disconnect()
+    }
 }

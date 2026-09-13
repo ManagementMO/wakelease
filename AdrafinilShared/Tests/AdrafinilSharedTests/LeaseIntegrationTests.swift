@@ -4,7 +4,8 @@ import Testing
 
 @Suite("Lease integration contracts")
 struct LeaseIntegrationTests {
-    @Test func cursorUsesConversationAndGenerationIdentity() throws {
+    @Test
+    func `cursor uses conversation and generation identity`() throws {
         let payload = Data(#"{"conversation_id":"chat","generation_id":"turn","prompt":"private","workspace_roots":["/private/repo"]}"#.utf8)
         let start = LeaseHookAdapter.requests(source: "cursor", action: "start", payload: payload)
         let stop = LeaseHookAdapter.requests(source: "cursor", action: "stop", payload: payload)
@@ -12,10 +13,11 @@ struct LeaseIntegrationTests {
         #expect(stop.first?.key == start.first?.key)
         let encoded = try String(decoding: LeaseJSON.encode(start), as: UTF8.self)
         #expect(!encoded.contains("private"))
-        #expect(start.first?.ttlSeconds == 3600)
+        #expect(start.first?.ttlSeconds == 3_600)
     }
 
-    @Test func codexTurnsAndSubagentsHaveIndependentKeys() {
+    @Test
+    func `codex turns and subagents have independent keys`() {
         let parent = Data(#"{"session_id":"s","turn_id":"t"}"#.utf8)
         let child = Data(#"{"session_id":"s","turn_id":"t","agent_id":"child"}"#.utf8)
         #expect(LeaseHookAdapter.requests(source: "codex", action: "start", payload: parent).first?.key == "codex:turn:s:t")
@@ -23,18 +25,21 @@ struct LeaseIntegrationTests {
         #expect(LeaseHookAdapter.requests(source: "codex", action: "subagent-stop", payload: parent).isEmpty)
     }
 
-    @Test func waitingAndResumeUseDifferentOperations() {
+    @Test
+    func `waiting and resume use different operations`() {
         let payload = Data(#"{"session_id":"s"}"#.utf8)
         #expect(LeaseHookAdapter.requests(source: "claude-code", action: "wait", payload: payload).first?.operation == "wait")
         #expect(LeaseHookAdapter.requests(source: "claude-code", action: "resume", payload: payload).first?.operation == "acquire")
     }
 
-    @Test func idleSessionLaunchDoesNotAcquire() {
+    @Test
+    func `idle session launch does not acquire`() {
         let payload = Data(#"{"session_id":"s","source":"startup"}"#.utf8)
         #expect(LeaseHookAdapter.requests(source: "claude-code", action: "clear-start", payload: payload).isEmpty)
     }
 
-    @Test func sessionEndDoesNotReleaseSubagents() async throws {
+    @Test
+    func `session end does not release subagents`() async throws {
         let broker = LeaseBroker()
         _ = try await broker.acquire(LeaseProposal(key: "parent", source: "codex", sessionID: "s", metadata: ["scope": "turn"]))
         _ = try await broker.acquire(LeaseProposal(key: "child", source: "codex", sessionID: "s", metadata: ["scope": "subagent"]))
@@ -42,19 +47,22 @@ struct LeaseIntegrationTests {
         #expect(requests.map(\.key) == ["parent"])
     }
 
-    @Test func hermesSessionsDoNotCoalesceIntoOneGatewayLease() {
+    @Test
+    func `hermes sessions do not coalesce into one gateway lease`() {
         let a = LeaseHookAdapter.requests(source: "hermes", action: "start", payload: Data(#"{"session_id":"a"}"#.utf8))
         let b = LeaseHookAdapter.requests(source: "hermes", action: "start", payload: Data(#"{"session_id":"b"}"#.utf8))
         #expect(a.first?.key != b.first?.key)
     }
 
-    @Test func malformedHookPayloadsFailSoft() {
+    @Test
+    func `malformed hook payloads fail soft`() {
         for payload in ["not JSON", "[]", "{}", #"{"session_id":42}"#] {
             #expect(LeaseHookAdapter.requests(source: "claude-code", action: "start", payload: Data(payload.utf8)).isEmpty)
         }
     }
 
-    @Test func knownAdaptersAreDiscoverableWithoutDaemonChanges() {
+    @Test
+    func `known adapters are discoverable without daemon changes`() {
         #expect(Set(LeaseIntegrations.all.map(\.id)) == ["claude-code", "codex", "cursor", "gemini-cli", "opencode", "pi", "cline", "aider", "hermes"])
         #expect(LeaseIntegrations.all.first { $0.id == "gemini-cli" }?.hooks.first?.event == "BeforeAgent")
     }
@@ -69,7 +77,8 @@ struct LeaseIntegrationInstallerTests {
         return (home, manager)
     }
 
-    @Test func jsonInstallUninstallRestoresOriginalBytesAndPermissions() throws {
+    @Test
+    func `json install uninstall restores original bytes and permissions`() throws {
         for id in ["claude-code", "codex", "cursor", "gemini-cli"] {
             let (home, manager) = try fixture()
             defer { try? FileManager.default.removeItem(at: home) }
@@ -93,7 +102,8 @@ struct LeaseIntegrationInstallerTests {
         }
     }
 
-    @Test func unrelatedExternalChangesSurviveUninstall() throws {
+    @Test
+    func `unrelated external changes survive uninstall`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try manager.install("claude-code")
@@ -106,7 +116,8 @@ struct LeaseIntegrationInstallerTests {
         #expect(restored["userSetting"] as? Int == 42)
     }
 
-    @Test func malformedHookContainersAreNeverReplaced() throws {
+    @Test
+    func `malformed hook containers are never replaced`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         let path = try manager.configurationURLs(for: "claude-code")[0]
@@ -117,7 +128,8 @@ struct LeaseIntegrationInstallerTests {
         #expect(try Data(contentsOf: path) == original)
     }
 
-    @Test func pluginFilenameIsNotProofOfOwnership() throws {
+    @Test
+    func `plugin filename is not proof of ownership`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         let path = try manager.configurationURLs(for: "pi")[0]
@@ -128,7 +140,8 @@ struct LeaseIntegrationInstallerTests {
         #expect(try String(contentsOf: path, encoding: .utf8) == "user-created plugin")
     }
 
-    @Test func modifiedOwnedPluginIsNotSilentlyDeleted() throws {
+    @Test
+    func `modified owned plugin is not silently deleted`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try manager.install("pi")
@@ -138,7 +151,8 @@ struct LeaseIntegrationInstallerTests {
         #expect(try String(contentsOf: path, encoding: .utf8) == "user modifications")
     }
 
-    @Test func foreignEmptyGroupsSurviveUninstall() throws {
+    @Test
+    func `foreign empty groups survive uninstall`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try manager.install("claude-code")
@@ -156,7 +170,8 @@ struct LeaseIntegrationInstallerTests {
         #expect(remaining?.first?["label"] as? String == "foreign-empty")
     }
 
-    @Test func symlinkedConfigurationIsRefused() throws {
+    @Test
+    func `symlinked configuration is refused`() throws {
         let (home, manager) = try fixture()
         defer { try? FileManager.default.removeItem(at: home) }
         let path = try manager.configurationURLs(for: "cursor")[0]

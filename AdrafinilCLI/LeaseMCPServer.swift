@@ -21,7 +21,7 @@ struct LeaseMCPServer {
     }
 
     mutating func run() -> Int32 {
-        var buffer = [UInt8](repeating: 0, count: 8192)
+        var buffer = [UInt8](repeating: 0, count: 8_192)
         var line = Data()
         while true {
             let count = Darwin.read(STDIN_FILENO, &buffer, buffer.count)
@@ -34,8 +34,8 @@ struct LeaseMCPServer {
                         line.removeAll(keepingCapacity: true)
                     }
                 } else {
-                    guard line.count < 65536 else {
-                        _ = sendError(id: nil, code: -32600, message: "MCP message exceeds 64 KiB.")
+                    guard line.count < 65_536 else {
+                        _ = sendError(id: nil, code: -32_600, message: "MCP message exceeds 64 KiB.")
                         return 1
                     }
                     line.append(byte)
@@ -45,9 +45,9 @@ struct LeaseMCPServer {
     }
 
     private mutating func handle(_ data: Data) -> Bool {
-        guard let parsed = try? JSONSerialization.jsonObject(with: data) else { return sendError(id: nil, code: -32700, message: "Parse error") }
+        guard let parsed = try? JSONSerialization.jsonObject(with: data) else { return sendError(id: nil, code: -32_700, message: "Parse error") }
         guard let message = parsed as? [String: Any], message["jsonrpc"] as? String == "2.0", let method = message["method"] as? String else {
-            return sendError(id: nil, code: -32600, message: "Invalid JSON-RPC request")
+            return sendError(id: nil, code: -32_600, message: "Invalid JSON-RPC request")
         }
         let id = message["id"]
         if method == "notifications/initialized", id == nil { initialized = negotiated; return true }
@@ -64,18 +64,18 @@ struct LeaseMCPServer {
             ])
         }
         if method == "ping" { return send(id: id, result: [:]) }
-        guard initialized else { return sendError(id: id, code: -32002, message: "Initialize this stdio server using MCP 2025-03-26 before calling tools.") }
+        guard initialized else { return sendError(id: id, code: -32_002, message: "Initialize this stdio server using MCP 2025-03-26 before calling tools.") }
         switch method {
         case "tools/list": return send(id: id, result: ["tools": tools])
         case "tools/call": return call(id: id, params: params)
-        default: return sendError(id: id, code: -32601, message: "Method not found")
+        default: return sendError(id: id, code: -32_601, message: "Method not found")
         }
     }
 
     private func call(id: Any?, params: [String: Any]) -> Bool {
         guard let name = params["name"] as? String,
               params["arguments"] == nil || params["arguments"] is [String: Any] else {
-            return sendError(id: id, code: -32602, message: "A tool name and object arguments are required.")
+            return sendError(id: id, code: -32_602, message: "A tool name and object arguments are required.")
         }
         let arguments = params["arguments"] as? [String: Any] ?? [:]
         do {
@@ -85,7 +85,7 @@ struct LeaseMCPServer {
                 let decoded = try JSONDecoder().decode(HoldArguments.self, from: JSONSerialization.data(withJSONObject: arguments))
                 guard !decoded.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LeaseCLIUsageError("A nonempty reason is required.") }
                 let minutes = decoded.minutes ?? 60
-                guard minutes.isFinite, minutes > 0, minutes <= 1440 else { throw LeaseCLIUsageError("minutes must be positive and no greater than 1440.") }
+                guard minutes.isFinite, minutes > 0, minutes <= 1_440 else { throw LeaseCLIUsageError("minutes must be positive and no greater than 1440.") }
                 var owner: ProcessIdentity?
                 if let pid = decoded.pid {
                     guard let identity = SystemProcessIdentity.read(pid) else { throw LeaseFailure.ownerUnavailable }
@@ -96,10 +96,10 @@ struct LeaseMCPServer {
                 guard let key = arguments["key"] as? String, !key.isEmpty else { throw LeaseCLIUsageError("A lease key is required.") }
                 request = LeaseRequest(operation: "release", key: key)
             case "get_wake_status": request = LeaseRequest(operation: "status")
-            default: return sendError(id: id, code: -32602, message: "Unknown tool")
+            default: return sendError(id: id, code: -32_602, message: "Unknown tool")
             }
             let reply = try client.send(request)
-            let text = String(decoding: try LeaseJSON.encode(reply), as: UTF8.self)
+            let text = try String(decoding: LeaseJSON.encode(reply), as: UTF8.self)
             return send(id: id, result: ["content": [["type": "text", "text": text]], "isError": !reply.ok])
         } catch {
             return send(id: id, result: ["content": [["type": "text", "text": "The lease request could not be completed. Check arguments and wakelease doctor. A transport timeout has an unknown outcome; inspect status before retrying."]], "isError": true])
@@ -109,7 +109,7 @@ struct LeaseMCPServer {
     private var tools: [[String: Any]] {
         let holdProperties: [String: Any] = [
             "reason": ["type": "string", "minLength": 1, "maxLength": 512],
-            "minutes": ["type": "number", "exclusiveMinimum": 0, "maximum": 1440],
+            "minutes": ["type": "number", "exclusiveMinimum": 0, "maximum": 1_440],
             "pid": ["type": "integer", "minimum": 1],
             "parentLeaseID": ["type": "string", "format": "uuid"],
         ]

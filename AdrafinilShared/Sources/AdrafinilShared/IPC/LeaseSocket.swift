@@ -3,8 +3,8 @@ import Foundation
 import os
 
 public enum LeaseFrames {
-    public static let maximumRequest = 65536
-    public static let maximumReply = 2 * 1024 * 1024
+    public static let maximumRequest = 65_536
+    public static let maximumReply = 2 * 1_024 * 1_024
 
     public static func frame(_ body: Data, maximum: Int) throws -> Data {
         guard !body.isEmpty, body.count <= maximum else { throw LocalIOError.frame }
@@ -34,7 +34,7 @@ public struct LeaseSocketClient: Sendable {
     public func sendAsync(_ request: LeaseRequest) async throws -> LeaseReply {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                do { continuation.resume(returning: try send(request)) }
+                do { try continuation.resume(returning: send(request)) }
                 catch { continuation.resume(throwing: error) }
             }
         }
@@ -168,7 +168,9 @@ public final class LeaseSocketServer: @unchecked Sendable {
 }
 
 enum SocketIO {
-    static var now: TimeInterval { SystemLeaseClock().now().continuous }
+    static var now: TimeInterval {
+        SystemLeaseClock().now().continuous
+    }
 
     static func makeSocket() throws -> Int32 {
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
@@ -211,7 +213,7 @@ enum SocketIO {
             let remaining = deadline - now
             guard remaining > 0 else { throw LocalIOError.timeout }
             var descriptor = pollfd(fd: fd, events: events, revents: 0)
-            let result = Darwin.poll(&descriptor, 1, Int32(min(remaining * 1000 + 1, 20_000)))
+            let result = Darwin.poll(&descriptor, 1, Int32(min(remaining * 1_000 + 1, 20_000)))
             if result < 0, errno == EINTR { continue }
             guard result >= 0 else { throw LocalIOError.system(errno) }
             if result == 0 { throw LocalIOError.timeout }

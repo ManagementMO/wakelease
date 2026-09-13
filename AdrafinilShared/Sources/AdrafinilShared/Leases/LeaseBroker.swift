@@ -61,7 +61,7 @@ public actor LeaseBroker {
     }
 
     public func restore(_ data: Data) throws {
-        guard data.count <= 2 * 1024 * 1024 else { throw LeaseFailure.capacity }
+        guard data.count <= 2 * 1_024 * 1_024 else { throw LeaseFailure.capacity }
         var restored = try JSONDecoder().decode(LeaseBook.self, from: data)
         let time = clock.now()
         let change = restored.recover(bootID: clock.bootID, at: time, identity: identify)
@@ -74,7 +74,7 @@ public actor LeaseBroker {
     public func acquire(_ proposal: LeaseProposal, issuedAt: TimeInterval? = nil, peerUID: UInt32? = nil) throws -> LeaseChange {
         guard acceptingWork else { throw LeaseFailure.paused }
         if let owner = proposal.owner {
-            guard (peerUID == nil || owner.uid == peerUID), identify(owner.pid) == owner else { throw LeaseFailure.ownerUnavailable }
+            guard peerUID == nil || owner.uid == peerUID, identify(owner.pid) == owner else { throw LeaseFailure.ownerUnavailable }
         }
         return try mutate { book, time in try book.acquire(proposal, at: time, issuedAt: issuedAt) }
     }

@@ -4,7 +4,11 @@ import Foundation
 @MainActor
 final class LeaseHelperConnection {
     enum Failure: Int, Error, Sendable {
-        case signingRequired = 1, unavailable, timedOut, rejected, versionMismatch
+        case signingRequired = 1
+        case unavailable
+        case timedOut
+        case rejected
+        case versionMismatch
     }
     private var connection: NSXPCConnection?
     private var connectionToken: UUID?

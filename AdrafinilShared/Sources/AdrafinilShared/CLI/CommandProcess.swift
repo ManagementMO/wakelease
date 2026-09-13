@@ -7,12 +7,16 @@ public enum CommandProcess {
 
     private final class Callbacks {
         let notify: (Event, Int32) -> Void
-        init(_ notify: @escaping (Event, Int32) -> Void) { self.notify = notify }
+        init(_ notify: @escaping (Event, Int32) -> Void) {
+            self.notify = notify
+        }
     }
 
     private final class Watcher {
         let check: (Int32) -> Bool
-        init(_ check: @escaping (Int32) -> Bool) { self.check = check }
+        init(_ check: @escaping (Int32) -> Bool) {
+            self.check = check
+        }
     }
 
     public static func watch(pid: Int32, whileActive: @escaping (Int32) -> Bool) -> Int32 {
@@ -29,7 +33,9 @@ public enum CommandProcess {
         let box = Unmanaged.passRetained(Callbacks(onEvent))
         defer { box.release() }
         var pointers = arguments.map { strdup($0) }
-        defer { for pointer in pointers { free(pointer) } }
+        defer { for pointer in pointers {
+            free(pointer)
+        } }
         guard pointers.allSatisfy({ $0 != nil }) else { return 125 }
         pointers.append(nil)
         return pointers.withUnsafeMutableBufferPointer { arguments in

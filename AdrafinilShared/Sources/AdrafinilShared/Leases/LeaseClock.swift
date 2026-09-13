@@ -9,7 +9,9 @@ public protocol LeaseClock: Sendable {
 public struct SystemLeaseClock: LeaseClock {
     public init() {}
 
-    public var bootID: String { Self.kernelBootID }
+    public var bootID: String {
+        Self.kernelBootID
+    }
 
     public func now() -> LeaseTime {
         LeaseTime(wall: Date(), continuous: Double(mach_continuous_time()) * Self.secondsPerTick)

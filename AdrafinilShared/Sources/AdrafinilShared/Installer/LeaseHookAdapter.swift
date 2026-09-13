@@ -15,7 +15,7 @@ public enum LeaseHookAdapter {
     }
 
     public static func requests(source: String, action: String, payload: Data, snapshot: LeaseSnapshot? = nil) -> [LeaseRequest] {
-        guard payload.count <= 4 * 1024 * 1024,
+        guard payload.count <= 4 * 1_024 * 1_024,
               let event = try? JSONDecoder().decode(Payload.self, from: payload),
               let session = event.session_id ?? event.sessionId ?? event.taskId ?? event.conversation_id,
               !session.isEmpty, source.utf8.count <= 64 else { return [] }
@@ -68,6 +68,6 @@ public enum LeaseHookAdapter {
             }
         }
         let sessionID = session.utf8.count <= 256 ? session : SHA256.hash(data: Data(session.utf8)).map { String(format: "%02x", $0) }.joined()
-        return [LeaseRequest(operation: operation, key: key, source: source, sourceKind: .hook, ttlSeconds: source == "cursor" ? 3600 : 14_400, reason: operation == "wait" ? "Waiting for user input" : nil, owner: owner, sessionID: sessionID, metadata: ["scope": scope])]
+        return [LeaseRequest(operation: operation, key: key, source: source, sourceKind: .hook, ttlSeconds: source == "cursor" ? 3_600 : 14_400, reason: operation == "wait" ? "Waiting for user input" : nil, owner: owner, sessionID: sessionID, metadata: ["scope": scope])]
     }
 }
