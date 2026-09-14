@@ -8,7 +8,7 @@ struct ProbeFailure: Error, CustomStringConvertible {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard arguments.count == 4, let uid = UInt32(arguments[2]), uid > 0, let id = UUID(uuidString: arguments[3]) else { exit(64) }
-let directory = URL(fileURLWithPath: arguments[1], isDirectory: true).standardizedFileURL
+let directory = URL(fileURLWithPath: arguments[1], isDirectory: true)
 let prefix = "wakelease-removal-test-"
 guard directory.deletingLastPathComponent().path == "/private/tmp",
       directory.lastPathComponent.hasPrefix(prefix),
@@ -18,6 +18,8 @@ let reservation = HelperRemovalReservation(id: id, uid: uid)
 
 do {
     switch arguments[0] {
+    case "validate":
+        print("Fixture path accepted.")
     case "create":
         guard getuid() == 0, !FileManager.default.fileExists(atPath: directory.path) else { throw ProbeFailure(description: "Root fixture must start at a new temporary path") }
         try store.save(reservation)
