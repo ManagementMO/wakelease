@@ -4,7 +4,7 @@ WakeLease's daemon accepts generic leases. Agent knowledge belongs in adapters a
 
 ## Verification levels
 
-**Contract/fixture verified** means current primary documentation or source was checked and our generated configuration/payload handling was tested. It does **not** mean an actual paid agent turn or physically closed MacBook was tested. No integration has live-agent or closed-lid certification from this development session.
+**Contract/fixture verified** means current primary documentation or source was checked and our generated configuration/payload handling was tested. Execution fixtures additionally run the actual installed JSON hook commands for Claude Code/Codex/Cursor/Gemini, the executable Cline hooks, Hermes argument-vector recipes, and OpenCode's generated TypeScript event handler against a simulation broker. It does **not** mean an actual paid agent turn or physically closed MacBook was tested. **Host-SDK verified** additionally means the real pinned host SDK loaded and executed our generated extension, with a deterministic offline model instead of a paid provider. Pi has this additional coverage. No paid-provider, full interactive-host, or closed-lid certification is claimed.
 
 | Tool | Current adapter | Evidence and limits |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ WakeLease's daemon accepts generic leases. Agent knowledge belongs in adapters a
 | Cursor | `beforeSubmitPrompt` / `stop` | Keyed on **conversation_id + generation_id**, not application lifetime. One-hour TTL backstop. Contract/fixtures checked. |
 | Gemini CLI | `BeforeAgent` / `AfterAgent`, session cleanup | Replaces upstream session-lifetime holding. Automatic retry/approval behavior still requires live testing. |
 | OpenCode | Generated TS plugin; busy/retry/idle status and permission/question events | No hold for an empty newly created session. Plugin is experimental until exercised against a live host. |
-| Pi | Generated TS extension; `agent_start` / `agent_settled`, shutdown safety net | Uses `getSessionId()` rather than storing a session file path, and sends its own PID. Requires `agent_settled`; upstream verification used Pi 0.83+. The installed Pi observed during research was 0.79.4, so this installation is not certified. |
+| Pi | Generated TS extension; `agent_start` / `agent_settled`, shutdown safety net | Uses `getSessionId()` rather than storing a session file path, and sends its own PID. Requires `agent_settled`. Host-SDK fixture verified on pinned Pi 0.83.0: real extension loading, overlapping independent sessions, PID ownership, final release and a subsequent turn, with all network attempts blocked and a mocked model. The user's older 0.79.4 installation is not certified. |
 | Cline | Experimental VS Code task hooks | Current Unix discovery uses **extensionless executable names** in `~/Documents/Cline/Hooks`, not `.sh` files in `Rules/Hooks`. Existing user scripts cause a conflict rather than being replaced. The newer SDK/CLI plugin mechanism is separate and is not claimed supported by this installer. |
 | Aider | Explicit command wrapper | `wakelease run -- aider ...`. Protects the process lifetime, including idle prompts; no claim of semantic turn/wait detection. No shell rc aliases are installed. |
 | Hermes | Manual shell-hook recipe | `pre_llm_call` acquires per conversation run; `on_session_end` releases. Session IDs remain independent—never one shared `hermes:gateway` key. YAML merging and consent are left to the user rather than edited blindly or auto-approved. |

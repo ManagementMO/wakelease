@@ -39,12 +39,27 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 - Literal command arguments, stdin, exit codes, signals, controlling terminals and watcher cancellation.
 - Malformed/foreign hook configuration, receipt ownership, backups, byte-exact restoration and modified plugins.
 - Read-only doctor semantics and refusal to uninstall recovery mechanisms before confirmed cleanup.
+- OS Security.framework rejection of unrelated signed binaries, unsigned binaries, and valid ad-hoc binaries spoofing all three production role identifiers.
+- Explicit flock release while a duplicated descriptor remains alive, including repeated parallel-suite verification.
+- Actual generated hook/script execution and a real pinned Pi SDK lifecycle using a mock model, an isolated home and network denial.
 - Durable helper removal admission, owner/transaction cancellation, restart fencing, rollback failure visibility and same-user maintenance exclusion.
 - In explicitly opted-in disposable CI only, `python3 Tests/root_removal_smoke.py` checks root-owned ticket permissions with a temporary fixture. It does not register services or call power APIs.
 
+## Additional offline host and performance checks
+
+```sh
+python3 Scripts/install-host-fixtures.py
+python3 Tests/pi_host_smoke.py
+python3 Tests/idle_smoke.py
+```
+
+The Pi fixture installs the checksum-pinned official `@earendil-works/pi-coding-agent@0.83.0` archive (published July 29, 2026), with package scripts disabled and a conservative dependency cutoff. It lives only under `.build/pi-host`, not in the product. The real SDK loads our generated extension in an isolated home/workspace with no inherited credentials. A mock stream replaces the provider; Node network entry points are blocked, and the test requires zero attempts. This verifies host lifecycle integration, not a paid provider or the interactive Pi UI.
+
+The idle check measures only its owned simulation daemon through `proc_pidinfo`, converting Mach ticks with `mach_timebase_info` rather than assuming nanoseconds. It reports CPU/resident memory and catches gross idle loops (>2% CPU) or excessive resident growth (>256 MiB); those regression ceilings are not advertising targets or production-helper measurements.
+
 ## Evidence recorded so far
 
-The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **547 Swift tests in 62 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-five CLI end-to-end cases, eight UI preview cases and a disposable package smoke test also passed at that checkpoint. Subsequent counts should be taken from fresh command output rather than treated as a permanent certification.
+The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **550 Swift tests in 64 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-eight CLI end-to-end cases, eight UI preview cases and a disposable package smoke test also passed at that checkpoint. The descriptor-alias lock fix also passed eight consecutive full parallel-suite runs. An isolated idle sample measured 0.0006% CPU and 8.36 MiB resident memory over five seconds for the simulation daemon only. Subsequent counts and measurements should be taken from fresh command output rather than treated as a permanent certification.
 
 Observed concurrent CLI latency in simulation varied with load: examples ranged from roughly 14–19 ms median and 18–30 ms p95, with an earlier burst above 60 ms p95. This includes CLI startup and persistence, not certified privileged transition latency. Do not advertise an unconditional sub-50-ms result or zero idle CPU from these samples.
 
@@ -53,7 +68,7 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
 | Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed for `bc205a1`, including the root-owned filesystem fixture, in [GitHub Actions](https://github.com/ManagementMO/wakelease/actions/runs/34792622643); subsequent changes require a fresh CI run |
-| Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Pure requirements and unsigned-start rejection covered; live signed peers unverified |
+| Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Requirement construction, OS rejection of signed wrong-role and ad-hoc spoofed-role binaries, plus unsigned-start rejection covered; positive production-signed XPC peers unverified |
 | Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
 | In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |
 | Uninstall | Active work paused, `SleepDisabled 0`, services/owned hooks/link removed, foreign edits preserved, coordinated multi-user removal | Coordinator/ownership fakes covered; live removal unverified |
@@ -62,7 +77,7 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 | Crash/recovery | Daemon crash, helper crash, helper wedge, relaunch, interrupted clear | Simulated/fake coverage; physical verification required |
 | Battery/thermal | Safe admission, hysteresis, unknown sensors, user-visible degradation | Fake sensor coverage; no deliberate hardware stress |
 | OS/architecture | macOS 15.4 floor through current release, Apple Silicon and Intel | ARM64, x86_64 and assembled universal release binaries compiled; inspected both slices and minimum 15.4; ad-hoc integrity and ZIP checksum verified. Execution evidence is Apple Silicon on 26.6.2; Intel hardware unverified |
-| Live integrations | Paid/free host sessions, approvals, cancellation, retry, background tasks | Contracts/fixtures only; see INTEGRATIONS.md |
+| Live integrations | Paid/free host sessions, approvals, cancellation, retry, background tasks | Generated program fixtures and real Pi SDK with a mocked offline model; live provider/interactive host approval still unverified; see INTEGRATIONS.md |
 | Accessibility/UX | VoiceOver, keyboard-only navigation, large text, hidden icon/reopen, real settings | Native primitives and visual previews; full manual audit pending |
 
 Use the supervised [A–K hardware procedure](HARDWARE_TESTS.md) for actual MacBook validation. Do not mark a gate passed by extrapolating from a compiler, a fake controller, a screenshot, or upstream's physical results. Record exact artifact and platform evidence. See [RECOVERY.md](RECOVERY.md) before any physical work.

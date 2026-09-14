@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import select
+import shutil
+import shlex
 import pty
 import signal
 import socket
@@ -93,6 +95,54 @@ class CLIIntegration(unittest.TestCase):
         lease = stamp["lease"]
         return self.protocol(dict(operation="configure", bootID=stamp["status"]["snapshot"]["bootID"],
                                   issuedAt=lease["deadline"] - lease["ttlSeconds"], preferences=preferences))
+
+    def test_generated_agent_commands_execute_from_installed_configurations(self):
+        cases = [("claude-code", ".claude/settings.json", "UserPromptSubmit", "Stop"),
+                 ("codex", ".codex/hooks.json", "UserPromptSubmit", "Stop"),
+                 ("cursor", ".cursor/hooks.json", "beforeSubmitPrompt", "stop"),
+                 ("gemini-cli", ".gemini/settings.json", "BeforeAgent", "AfterAgent")]
+        for source, filename, start_event, stop_event in cases:
+            with self.subTest(source=source), tempfile.TemporaryDirectory(prefix="wl-hook-exec-") as home:
+                installed = self.cli_run("integrations", "install", source, "--home", home, "--state-dir", str(Path(home) / "receipts"), "--yes")
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+                hooks = json.loads((Path(home) / filename).read_text())["hooks"]
+                payload = json.dumps(dict(session_id="fixture", turn_id="turn", conversation_id="fixture", generation_id="turn"))
+                for event, expected in [(start_event, 1), (stop_event, 0)]:
+                    entry = hooks[event][0]
+                    command = entry.get("command") or entry["hooks"][0]["command"]
+                    result = subprocess.run(["/bin/sh", "-c", command], input=payload, env=self.environment, capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(self.status()["snapshot"]["effectiveCount"], expected)
+        with tempfile.TemporaryDirectory(prefix="wl-cline-exec-") as home:
+            installed = self.cli_run("integrations", "install", "cline", "--home", home, "--state-dir", str(Path(home) / "receipts"), "--yes")
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            for event, expected in [("TaskStart", 1), ("TaskComplete", 0)]:
+                path = Path(home) / "Documents/Cline/Hooks" / event
+                result = subprocess.run([str(path)], input='{"taskId":"fixture-task"}', env=self.environment, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.status()["snapshot"]["effectiveCount"], expected)
+
+    def test_generated_hermes_commands_execute_as_literal_argument_vectors(self):
+        recipe = self.cli_run("hooks", "generate", "--source", "hermes")
+        self.assertEqual(recipe.returncode, 0, recipe.stderr)
+        commands = [json.loads(line.split(": ", 1)[1]) for line in recipe.stdout.splitlines() if line.startswith("    - command: ")]
+        self.assertEqual(len(commands), 2)
+        for command, expected in zip(commands, [1, 0]):
+            result = subprocess.run(shlex.split(command), input='{"session_id":"hermes-fixture"}', env=self.environment, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.status()["snapshot"]["effectiveCount"], expected)
+
+    def test_generated_opencode_plugin_executes_documented_event_fixtures(self):
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "Node is required for the generated plugin fixture")
+        with tempfile.TemporaryDirectory(prefix="wl-opencode-exec-") as home:
+            installed = self.cli_run("integrations", "install", "opencode", "--home", home, "--state-dir", str(Path(home) / "receipts"), "--yes")
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            script = Path(__file__).resolve().parent / "opencode_plugin_smoke.mjs"
+            plugin = Path(home) / ".config/opencode/plugins/wakelease.ts"
+            result = subprocess.run([node, str(script), str(plugin), self.cli], env=self.environment, capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
 
     def test_generated_custom_recipes_namespace_and_release_work(self):
         recipes = []

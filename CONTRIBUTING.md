@@ -4,7 +4,7 @@ Read [AGENTS.md](AGENTS.md), [UPSTREAM.md](UPSTREAM.md), and [Docs/THREAT_MODEL.
 
 ## Development and verification
 
-Swift 6.2+ and macOS 15.4+ are required by this branch. Full Xcode is a separate build/signing gate; the Command Line Tools path is:
+Swift 6.2+ and macOS 15.4+ are required by this branch. The test scripts use Python 3; generated JavaScript/TypeScript execution fixtures also need Node 22.19+. Node and the optional pinned Pi SDK are test-only, not product dependencies. Full Xcode is a separate build/signing gate; the Command Line Tools path is:
 
 ```sh
 WAKELEASE_SOURCE_TESTING=1 swift test --scratch-path .build/source-testing \

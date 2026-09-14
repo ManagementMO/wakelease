@@ -25,12 +25,21 @@ jobs:
         run: python3 Scripts/lint.py
 
   test:
-    name: Core, transport, CLI and package safety
-    runs-on: macos-26
+    name: Core and package safety (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+      - name: Select latest Xcode and record the platform
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
       - name: Swift invariants and fake controllers
         env:
           WAKELEASE_SOURCE_TESTING: "1"
@@ -44,6 +53,14 @@ jobs:
           python3 Tests/root_removal_smoke.py
       - name: Command and simulation daemon integration
         run: python3 Tests/cli_integration.py
+      - name: Simulated idle footprint regression
+        run: python3 Tests/idle_smoke.py
+      - name: Pinned Pi SDK offline lifecycle contract
+        env:
+          WAKELEASE_REQUIRE_PI_HOST: "1"
+        run: |
+          python3 Scripts/install-host-fixtures.py
+          python3 Tests/pi_host_smoke.py
       - name: Disposable ad-hoc bundle and privileged-mode refusal
         env:
           WAKELEASE_HEADLESS: "1"
@@ -56,14 +73,32 @@ jobs:
         run: python3 Tests/release_tools.py
       - name: Repository and documentation checks
         run: python3 Scripts/check-repository.py
+      - name: Retain universal development archive
+        if: matrix.runner == 'macos-26'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: WakeLease-universal-development-no-privilege
+          path: |
+            .build/universal/WakeLease.zip
+            .build/universal/WakeLease.zip.sha256
+          retention-days: 7
 
   build:
-    name: Full Xcode app build, unsigned
-    runs-on: macos-26
+    name: Full unsigned Xcode build (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-      - name: Select latest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+      - name: Select latest Xcode and record the platform
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sw_vers
+          uname -m
+          xcodebuild -version
+          swift --version
       # Compile-only check — no signing identities on CI. The daemon/helper/CLI are embedded in the
       # app target, so building the Adrafinil scheme covers all four products.
       - name: Build WakeLease products
@@ -74,6 +109,6 @@ jobs:
       - name: Retain unsigned compile artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: WakeLease-unsigned-compile-only
+          name: WakeLease-unsigned-compile-only-${{ matrix.runner }}
           path: .build/xcode/Build/Products/Debug/WakeLease.app
           retention-days: 7

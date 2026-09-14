@@ -46,7 +46,7 @@ public enum LeaseIntegrations {
             .init("BeforeAgent", "start"), .init("AfterAgent", "stop"), .init("SessionEnd", "session-end"), .init("AfterTool", "resume"),
         ], capabilities: ["turn", "session-retirement"], note: "BeforeAgent/AfterAgent are turn-scoped. Automatic retry and interactive approval behavior needs live validation.", requiresApproval: false),
         .init(id: "opencode", displayName: "OpenCode", relativePath: ".config/opencode/plugins/wakelease.ts", format: .openCodePlugin, hooks: [], capabilities: ["turn", "waiting-best-effort", "independent-sessions"], note: "Uses session.status busy/retry/idle. Plugin contract checked; live execution is experimental.", requiresApproval: false),
-        .init(id: "pi", displayName: "Pi", relativePath: ".pi/agent/extensions/wakelease.ts", format: .piPlugin, hooks: [], capabilities: ["turn", "process-identity"], note: "Requires agent_settled support (upstream device verification used Pi 0.83+). Older installations should use run until upgraded.", requiresApproval: false),
+        .init(id: "pi", displayName: "Pi", relativePath: ".pi/agent/extensions/wakelease.ts", format: .piPlugin, hooks: [], capabilities: ["turn", "process-identity"], note: "Requires agent_settled (Pi 0.83+). Real SDK 0.83 lifecycle tested with an offline mock model; provider/UI/closed-lid behavior is not certified. Older versions should use run.", requiresApproval: false),
         .init(id: "cline", displayName: "Cline", relativePath: "Documents/Cline/Hooks", format: .scripts, hooks: [
             .init("TaskStart", "start"), .init("TaskResume", "start"), .init("UserPromptSubmit", "start"),
             .init("TaskComplete", "stop"), .init("TaskCancel", "stop"), .init("PostToolUse", "resume"),
