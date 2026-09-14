@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import plistlib
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -9,11 +11,11 @@ import uuid
 
 
 class NativeUISmoke(unittest.TestCase):
-    def audit(self, surface="custom-integration", mode="inspect"):
+    def audit(self, surface="custom-integration", mode="inspect", executable=None):
         root = Path(__file__).resolve().parents[1]
-        executable = Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"
+        executable = executable or Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"
         clipboard = "wakelease-ui-test-" + uuid.uuid4().hex
-        process = subprocess.Popen([str(executable), "--preview", "normal", "--" + surface, "--preview-pasteboard", clipboard],
+        process = subprocess.Popen([str(executable), "--preview", "normal", "--" + surface, "--preview-pasteboard", clipboard, "-ApplePersistenceIgnoreState", "YES"],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             result = subprocess.run(["swift", str(root / "Tests/ui_accessibility.swift"), str(process.pid), str(executable), clipboard, mode],
@@ -50,6 +52,34 @@ class NativeUISmoke(unittest.TestCase):
         self.assertEqual(set(report["checks"]), {"native-accessibility-labels", "tab-navigation", "isolated-copy-command",
                                              "copy-feedback-invalidated-on-edit", "display-and-json-recipe", "invalid-recipe-blocks-copy",
                                              "menu-visibility-toggle", "settings-section-navigation", "escape-closes-custom-sheet", "return-closes-custom-sheet"})
+
+    def test_maximum_recipe_content_wraps_and_remains_usable(self):
+        report = self.audit("settings", "content")
+        self.assertEqual(set(report["checks"]), {"long-event-labels-wrap", "long-label-copy-buttons-fit", "maximum-recipe-content-round-trips",
+                                               "long-command-text-stays-in-sheet", "oversized-content-scrolls-to-actions"})
+
+    def test_invalid_recipe_fields_remain_editable_and_recover(self):
+        report = self.audit("settings", "validation")
+        self.assertEqual(set(report["checks"]), {"invalid-executable-remains-editable", "invalid-recipe-clears-copy-actions",
+                                               "error-focus-preserved", "recipe-recovers-after-edit", "invalid-identity-fields-recover"})
+
+    def test_hidden_icon_close_and_reopen_uses_the_same_app_process(self):
+        root = Path(__file__).resolve().parents[1]
+        binaries = Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug"))
+        with tempfile.TemporaryDirectory(prefix="wl-ui-reopen-", dir=root / ".build") as directory:
+            app = Path(directory) / "WakeLease UI Test.app"
+            executable = app / "Contents/MacOS/WakeLeaseMenu"
+            executable.parent.mkdir(parents=True)
+            shutil.copy2(binaries / "WakeLeaseMenu", executable)
+            info = {"CFBundleIdentifier": "org.wakelease.ui-test." + uuid.uuid4().hex,
+                    "CFBundleName": "WakeLease UI Test", "CFBundleExecutable": "WakeLeaseMenu", "CFBundlePackageType": "APPL",
+                    "LSUIElement": True, "NSPrincipalClass": "NSApplication", "NSSupportsAutomaticTermination": False,
+                    "LSMinimumSystemVersion": "15.4", "NSHighResolutionCapable": True}
+            (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
+            subprocess.run(["codesign", "--force", "--sign", "-", str(app)], check=True, capture_output=True, timeout=10)
+            report = self.audit("settings", "reopen", executable)
+            self.assertEqual(set(report["checks"]), {"menu-item-removed", "hidden-app-stays-running", "reopen-restores-settings",
+                                                   "reopen-preserves-hidden-preference", "reopen-reuses-window", "menu-item-restored"})
 
     def test_isolated_preview_windows_render_and_exit(self):
         root = Path(__file__).resolve().parents[1]

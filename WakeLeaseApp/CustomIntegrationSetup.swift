@@ -66,17 +66,21 @@ struct CustomIntegrationSetup: View {
                         }
                         Text("Attach only the events your tool actually supports. Start also resumes work; waiting follows your WakeLease waiting policy. Send heartbeats before expiry for longer work. Missing IDs and unavailable services fail soft, not as proof of protection.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        GroupBox("No lifecycle hooks?") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                TextField("Executable only; defaults to source ID", text: $options.executable).textFieldStyle(.roundedBorder)
-                                    .accessibilityLabel("Executable for command wrapper")
+                    }
+                    GroupBox("No lifecycle hooks?") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            TextField("Executable only; defaults to source ID", text: $options.executable).textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("Executable for command wrapper")
+                            if case let .success(recipe) = recipe {
                                 Text(recipe.wrapper).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Button("Copy command wrapper") { copy(recipe.wrapper); copied = "wrapper" }
-                                Text("Add literal arguments after the executable. The wrapper protects the entire process, including idle prompts; it cannot infer semantic work.")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                            }
+                            Text("Add literal arguments after the executable. The wrapper protects the entire process, including idle prompts; it cannot infer semantic work.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if case let .success(recipe) = recipe {
                         Button("Copy recipe as JSON") {
                             let encoder = JSONEncoder()
                             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
