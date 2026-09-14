@@ -35,7 +35,7 @@ enum ServiceRegistry {
     static func install(preferences: WakeLeasePreferences) async throws -> String {
         guard canInstall else { throw Failure(message: "Enable services from the packaged, team-signed app. Unsigned development uses the simulation daemon.") }
         let lock = try SecureDirectory(url: WakeLeasePaths.standardDirectory, create: true).lock(name: "maintenance.lock")
-        defer { Darwin.close(lock) }
+        defer { SecureDirectory.closeLock(lock) }
         let bundle = Bundle.main.bundleURL
         try verify(bundle, role: .app)
         try verify(bundle.appendingPathComponent("Contents/Library/LaunchAgents/WakeLeaseDaemon"), role: .daemon)

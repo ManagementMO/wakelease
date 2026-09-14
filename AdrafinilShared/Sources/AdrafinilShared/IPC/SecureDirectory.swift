@@ -199,6 +199,11 @@ public final class SecureDirectory: @unchecked Sendable {
         return fd
     }
 
+    public static func closeLock(_ descriptor: Int32) {
+        while flock(descriptor, LOCK_UN) != 0, errno == EINTR {}
+        Darwin.close(descriptor)
+    }
+
     func validateName(_ name: String) throws {
         guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.utf8.contains(0) else { throw LocalIOError.unsafePath }
     }

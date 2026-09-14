@@ -12,7 +12,7 @@ final class AppUninstallEnvironment: UninstallEnvironment {
     private var reservation: HelperRemovalReservation?
     private var maintenanceLock: Int32?
 
-    isolated deinit { if let maintenanceLock { Darwin.close(maintenanceLock) } }
+    isolated deinit { if let maintenanceLock { SecureDirectory.closeLock(maintenanceLock) } }
 
     func pauseAndVerifySleepAllowed() async throws {
         guard ServiceRegistry.isPackaged else { throw ServiceRegistry.Failure(message: "Uninstall services from the packaged app that owns their registration.") }

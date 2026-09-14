@@ -25,6 +25,7 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 - Status distinguishes zero local demand from another user's helper claim.
 - Removal prevents new wake claims during teardown and across helper restart; same-user maintenance cannot cancel an overlapping transaction.
 - The CI permission fixture validates its temporary path lexically so Foundation's existing-path `/private` alias rewriting cannot reject its own cleanup.
+- File locks are explicitly unlocked before close, preventing a duplicated or inherited descriptor from retaining a finished install/removal lock during parallel subprocess activity.
 
 ### Security and privacy
 

@@ -57,7 +57,7 @@ public struct LeaseIntegrationManager: Sendable {
         guard descriptor.format != .manual else { throw LeaseIntegrationFailure.manual(descriptor.note) }
         let storage = try dryRun ? nil : SecureDirectory(url: receiptDirectory, create: true)
         let lock = try storage?.lock(name: "install.lock") ?? -1
-        defer { if lock >= 0 { Darwin.close(lock) } }
+        defer { if lock >= 0 { SecureDirectory.closeLock(lock) } }
         let old = try loadReceipt(id)
         let bindings = descriptor.hooks.map { ManagedLeaseHook(event: $0.event, matcher: $0.matcher, command: LeaseIntegrations.command(cliPath: cliPath, id: id, action: $0.action)) }
         var prepared: [Prepared] = []
@@ -112,7 +112,7 @@ public struct LeaseIntegrationManager: Sendable {
         guard try loadReceipt(id) != nil else { return LeaseIntegrationReport(changed: false, diff: "(unchanged)") }
         let storage = try SecureDirectory(url: receiptDirectory, create: false)
         let lock = try dryRun ? -1 : storage.lock(name: "install.lock")
-        defer { if lock >= 0 { Darwin.close(lock) } }
+        defer { if lock >= 0 { SecureDirectory.closeLock(lock) } }
         guard let receipt = try loadReceipt(id) else { return LeaseIntegrationReport(changed: false, diff: "(unchanged)") }
         var changes: [(URL, Data, Data?, UInt16)] = []
         for (index, file) in receipt.files.enumerated() {

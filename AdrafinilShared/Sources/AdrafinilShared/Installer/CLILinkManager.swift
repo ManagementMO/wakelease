@@ -24,7 +24,7 @@ public struct CLILinkManager: Sendable {
         let directory = try SecureDirectory(url: destination.deletingLastPathComponent(), create: true, privateDirectory: false)
         let state = try SecureDirectory(url: stateDirectory, create: true)
         let lock = try state.lock(name: "cli-install.lock")
-        defer { Darwin.close(lock) }
+        defer { SecureDirectory.closeLock(lock) }
         let receipt = try readReceipt(state)
         if let current = try directory.symbolicLinkTarget(name: destination.lastPathComponent) {
             guard receipt?.target == current, current == target.path else { throw LeaseIntegrationFailure.unmanaged }
@@ -40,7 +40,7 @@ public struct CLILinkManager: Sendable {
         do { state = try SecureDirectory(url: stateDirectory, create: false) }
         catch LocalIOError.system(ENOENT) { return }
         let lock = try state.lock(name: "cli-install.lock")
-        defer { Darwin.close(lock) }
+        defer { SecureDirectory.closeLock(lock) }
         guard let receipt = try readReceipt(state) else { return }
         do {
             let directory = try SecureDirectory(url: destination.deletingLastPathComponent(), create: false, privateDirectory: false)

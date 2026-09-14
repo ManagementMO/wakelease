@@ -99,7 +99,7 @@ public final class LeaseSocketServer: @unchecked Sendable {
             throw LocalIOError.alreadyRunning
         }
         var keepLock = false
-        defer { if !keepLock { Darwin.close(lockFD) } }
+        defer { if !keepLock { SecureDirectory.closeLock(lockFD) } }
         if fstatat(storage.descriptor, "cli.sock", &info, AT_SYMLINK_NOFOLLOW) == 0 {
             guard info.st_mode & S_IFMT == S_IFSOCK, info.st_uid == getuid() else { throw LocalIOError.unsafePath }
             guard unlinkat(storage.descriptor, "cli.sock", 0) == 0 else { throw LocalIOError.system(errno) }
@@ -130,7 +130,7 @@ public final class LeaseSocketServer: @unchecked Sendable {
                 unlinkat(storage.descriptor, "cli.sock", 0)
             }
         }
-        if previous.lockFD >= 0 { Darwin.close(previous.lockFD) }
+        if previous.lockFD >= 0 { SecureDirectory.closeLock(previous.lockFD) }
     }
 
     private func accept(_ listening: Int32) {

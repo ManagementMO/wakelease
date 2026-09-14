@@ -51,11 +51,11 @@ struct HelperRemovalStoreTests {
         let directory = try SecureDirectory(url: url, create: true)
         do {
             let first = try directory.lock(name: "maintenance.lock")
-            defer { Darwin.close(first) }
+            defer { SecureDirectory.closeLock(first) }
             #expect(throws: (any Error).self) { try directory.lock(name: "maintenance.lock") }
         }
         let next = try directory.lock(name: "maintenance.lock")
-        Darwin.close(next)
+        SecureDirectory.closeLock(next)
     }
 
     @Test
