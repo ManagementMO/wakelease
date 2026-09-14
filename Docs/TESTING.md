@@ -44,7 +44,7 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 
 ## Evidence recorded so far
 
-The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **529 Swift tests in 58 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-two CLI end-to-end cases, six UI preview cases and a disposable package smoke test also passed at that checkpoint. Subsequent counts should be taken from fresh command output rather than treated as a permanent certification.
+The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **547 Swift tests in 62 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-five CLI end-to-end cases, eight UI preview cases and a disposable package smoke test also passed at that checkpoint. Subsequent counts should be taken from fresh command output rather than treated as a permanent certification.
 
 Observed concurrent CLI latency in simulation varied with load: examples ranged from roughly 14–19 ms median and 18–30 ms p95, with an earlier burst above 60 ms p95. This includes CLI startup and persistence, not certified privileged transition latency. Do not advertise an unconditional sub-50-ms result or zero idle CPU from these samples.
 
@@ -52,7 +52,7 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
-| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed for `8e786db` in [GitHub Actions](https://github.com/ManagementMO/wakelease/actions/runs/34790387538); subsequent changes require a fresh CI run |
+| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed for `bc205a1`, including the root-owned filesystem fixture, in [GitHub Actions](https://github.com/ManagementMO/wakelease/actions/runs/34792622643); subsequent changes require a fresh CI run |
 | Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Pure requirements and unsigned-start rejection covered; live signed peers unverified |
 | Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
 | In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |
@@ -65,4 +65,4 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 | Live integrations | Paid/free host sessions, approvals, cancellation, retry, background tasks | Contracts/fixtures only; see INTEGRATIONS.md |
 | Accessibility/UX | VoiceOver, keyboard-only navigation, large text, hidden icon/reopen, real settings | Native primitives and visual previews; full manual audit pending |
 
-Do not mark a gate passed by extrapolating from a compiler, a fake controller, a screenshot, or upstream's physical results. Record exact artifact and platform evidence. See [RECOVERY.md](RECOVERY.md) before any physical work.
+Use the supervised [A–K hardware procedure](HARDWARE_TESTS.md) for actual MacBook validation. Do not mark a gate passed by extrapolating from a compiler, a fake controller, a screenshot, or upstream's physical results. Record exact artifact and platform evidence. See [RECOVERY.md](RECOVERY.md) before any physical work.

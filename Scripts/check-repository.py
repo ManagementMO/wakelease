@@ -16,7 +16,10 @@ def main():
     for directory in ["Scripts", "Tests"]:
         for source in (ROOT / directory).glob("*.py"):
             ast.parse(source.read_text(), filename=str(source))
-    documents = [ROOT / name for name in ["README.md", "CONTRIBUTING.md", "SECURITY.md", "UPSTREAM.md", "AGENTS.md"]]
+    documents = [ROOT / name for name in ["README.md", "CONTRIBUTING.md", "SECURITY.md", "UPSTREAM.md", "CHANGELOG.md", "AGENTS.md"]]
+    for name in ["ARCHITECTURE.md", "THREAT_MODEL.md", "INTEGRATIONS.md", "LEASE_PROTOCOL.md", "POWER_MANAGEMENT.md", "TESTING.md", "RELEASE.md"]:
+        if not (ROOT / "Docs" / name).is_file():
+            problems.append("Missing required documentation: Docs/" + name)
     documents.extend((ROOT / "Docs").glob("*.md"))
     for document in documents:
         text = document.read_text()

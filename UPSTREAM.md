@@ -9,7 +9,8 @@ WakeLease began as a derivative of [Adrafinil](https://github.com/kageroumado/ad
 - Reviewed and imported September 12, 2026.
 - Full upstream Git history and release tags are retained.
 - `upstream` points to `https://github.com/kageroumado/adrafinil.git`.
-- No WakeLease public repository has been designated yet. `origin` is intentionally unset. No release is published by this checkout.
+- The independent public repository is [ManagementMO/wakelease](https://github.com/ManagementMO/wakelease), configured as `origin`.
+- The initial reviewed history was published to `main` on September 13, 2026. Source publication is not a signed/notarized release or hardware certification.
 
 The original MIT license and copyright notice remain in `LICENSE`. Distribution must include that notice. Retained source paths and the internal `AdrafinilShared` module make upstream fixes easier to compare and port; they are not user-facing branding.
 
@@ -35,7 +36,7 @@ The [valentine/adrafinil Sequoia backport](https://github.com/valentine/adrafini
 
 ## Naming and adjacent projects
 
-A September 13, 2026 check found no exact WakeLease GitHub repository and no Homebrew formula/cask at that name. Fuchsia already uses `WakeLease` as an API type, so the term is not unique. [Lumos](https://github.com/lovstudio/lumos) is an adjacent macOS utility with its own wake-lease and experimental clamshell work; its README was reviewed during the naming check. No Lumos code or artwork is incorporated. The recommendation is to retain **WakeLease for macOS** provisionally, not to claim trademark clearance or invention of the category. Recheck naming and designate a public repository before release.
+A September 13, 2026 check found no exact WakeLease GitHub repository and no Homebrew formula/cask at that name. Fuchsia already uses `WakeLease` as an API type, so the term is not unique. [Lumos](https://github.com/lovstudio/lumos) is an adjacent macOS utility with its own wake-lease and experimental clamshell work; its README was reviewed during the naming check. No Lumos code or artwork is incorporated. The recommendation is to retain **WakeLease for macOS** provisionally, not to claim trademark clearance or invention of the category. The independent ManagementMO/wakelease source repository is now public. Recheck naming before a supported binary release.
 
 ## Maintaining lineage
 

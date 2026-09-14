@@ -1,10 +1,10 @@
 # Release procedure
 
-This is a maintainer-run procedure. No production certificate, notarization credential, public repository, release URL or security contact is assigned by this checkout. Do not publish an ad-hoc build or an unverified physical-sleep claim.
+This is a maintainer-run procedure for [ManagementMO/wakelease](https://github.com/ManagementMO/wakelease). GitHub private vulnerability reporting is enabled. No production certificate, notarization credential or supported binary release is assigned by this checkout. Do not publish an ad-hoc build or an unverified physical-sleep claim.
 
 ## Required decisions and gates
 
-- Designate the public repository and a monitored private vulnerability-reporting channel.
+- Keep private vulnerability reporting enabled on the public repository and designate a maintainer responsible for reviewing reports.
 - Recheck the provisional name. See the collision/adjacent-project findings in [UPSTREAM.md](../UPSTREAM.md).
 - Use an authorized Developer ID Application identity and its actual Team Identifier. Never commit/export credentials into this repository.
 - Choose the version and supported architectures based on actual build/runtime evidence.

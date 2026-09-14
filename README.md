@@ -114,7 +114,9 @@ Uninstall first pauses admission and requires confirmed cleanup before removing 
 - [CLI reference](Docs/CLI.md)
 - [Integration capabilities](Docs/INTEGRATIONS.md)
 - [Threat model](Docs/THREAT_MODEL.md) and [security reporting](SECURITY.md)
+- [Power-management semantics](Docs/POWER_MANAGEMENT.md)
 - [Tests and outstanding hardware gates](Docs/TESTING.md)
+- [Release procedure](Docs/RELEASE.md) and [changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 
-WakeLease has no telemetry, automatic update feed, or normal-operation network dependency. A public repository, security contact, signing identity, notarization account, and release channel must be designated by the maintainer before publication.
+WakeLease has no telemetry, automatic update feed, or normal-operation network dependency. Source lives at [ManagementMO/wakelease](https://github.com/ManagementMO/wakelease); private security reporting is enabled. Production signing, notarization, and physical release validation are still required before distributing a supported release.
