@@ -19,8 +19,7 @@ http2.connect = net.connect = net.createConnection = tls.connect = denyNetwork;
 net.Socket.prototype.connect = denyNetwork;
 
 const sdk = await import(pathToFileURL(join(sdkRoot, "dist/index.js")).href);
-const ai = await import(pathToFileURL(join(sdkRoot, "node_modules/@earendil-works/pi-ai/dist/index.js")).href);
-const runtime = await sdk.ModelRuntime.create({ credentials: new ai.InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false });
+const runtime = await sdk.ModelRuntime.create({ authPath: join(home, ".pi/agent/auth.json"), modelsPath: null, allowModelNetwork: false });
 await runtime.setRuntimeApiKey("openai", "offline-fixture-not-a-credential", { allowNetwork: false });
 const model = runtime.getModels("openai")[0];
 assert.ok(model, "The pinned SDK must expose a built-in model for its mocked stream");
