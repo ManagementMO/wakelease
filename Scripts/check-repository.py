@@ -39,7 +39,7 @@ def main():
         if retired in readme:
             problems.append("Retired upstream branding/download in README: " + retired)
     project = (ROOT / "Adrafinil.xcodeproj/project.pbxproj").read_text()
-    for expected in ["path = WakeLeaseApp;", "path = WakeLease.app;", "PRODUCT_NAME = WakeLeaseDaemon;", "PRODUCT_NAME = WakeLeaseHelper;", "MACOSX_DEPLOYMENT_TARGET = 15.4;"]:
+    for expected in ["objectVersion = 77;", "preferredProjectObjectVersion = 77;", "path = WakeLeaseApp;", "path = WakeLease.app;", "PRODUCT_NAME = WakeLeaseDaemon;", "PRODUCT_NAME = WakeLeaseHelper;", "MACOSX_DEPLOYMENT_TARGET = 15.4;"]:
         if expected not in project:
             problems.append("Xcode product layout is missing: " + expected)
     for directory, role, filename in [("AdrafinilDaemon", "daemon", "LaunchAgent.plist"), ("AdrafinilHelper", "helper", "LaunchDaemon.plist")]:
