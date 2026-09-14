@@ -12,6 +12,8 @@ enum WakeLeaseEntry {
             print("WakeLease \(WakeLeaseIdentity.marketingVersion)")
             return
         }
+        do { _ = try PreviewUIAudit.pasteboardName(arguments: arguments) }
+        catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(64) }
         if arguments.contains("--uninstall") {
             guard Set(arguments).isSubset(of: ["--uninstall", "--yes", "--purge", "--remove-app", "--dry-run"]) else { exit(64) }
             if arguments.contains("--dry-run") {

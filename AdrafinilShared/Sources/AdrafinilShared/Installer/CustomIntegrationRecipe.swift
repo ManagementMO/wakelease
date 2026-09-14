@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CustomIntegrationOptions: Sendable {
+public struct CustomIntegrationOptions: Sendable, Equatable {
     public var source = "my-tool"
     public var sessionVariable = "WORK_ID"
     public var ttlSeconds: TimeInterval = 3_600

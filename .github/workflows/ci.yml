@@ -69,6 +69,8 @@ jobs:
         run: python3 Scripts/build-app.py --configuration release --sign - --arch arm64 --arch x86_64 --output .build/universal/WakeLease.app --zip
       - name: Strict C syntax
         run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c AdrafinilShared/Sources/WakeLeaseProcess/RemovalPermissions.c
+      - name: Native accessibility harness typecheck
+        run: swiftc -typecheck Tests/ui_accessibility.swift
       - name: Release-tool argument safety
         run: python3 Tests/release_tools.py
       - name: Repository and documentation checks

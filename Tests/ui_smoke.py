@@ -1,12 +1,56 @@
+import json
 import os
 from pathlib import Path
 import struct
 import subprocess
 import tempfile
 import unittest
+import uuid
 
 
 class NativeUISmoke(unittest.TestCase):
+    def audit(self, surface="custom-integration", mode="inspect"):
+        root = Path(__file__).resolve().parents[1]
+        executable = Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"
+        clipboard = "wakelease-ui-test-" + uuid.uuid4().hex
+        process = subprocess.Popen([str(executable), "--preview", "normal", "--" + surface, "--preview-pasteboard", clipboard],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            result = subprocess.run(["swift", str(root / "Tests/ui_accessibility.swift"), str(process.pid), str(executable), clipboard, mode],
+                                    capture_output=True, text=True, timeout=60)
+            if result.returncode == 77:
+                if os.environ.get("WAKELEASE_REQUIRE_UI_AUDIT") == "1":
+                    self.fail(result.stderr.strip())
+                self.skipTest(result.stderr.strip())
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(report["scope"], "preview-only")
+            self.assertTrue(report["clipboardIsolated"])
+            self.assertGreater(len(report["nodes"]), 10)
+            return report
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
+
+    def test_custom_setup_exports_native_accessibility_elements(self):
+        report = self.audit()
+        labels = {node.get("label") for node in report["nodes"]}
+        self.assertIn("Source identifier", labels)
+        self.assertIn("Work identifier environment variable", labels)
+        self.assertIn("Copy Work starts / resumes command", labels)
+
+    def test_native_settings_keyboard_and_copy_workflows(self):
+        report = self.audit("settings", "workflow")
+        self.assertEqual(set(report["checks"]), {"native-accessibility-labels", "tab-navigation", "isolated-copy-command",
+                                             "copy-feedback-invalidated-on-edit", "display-and-json-recipe", "invalid-recipe-blocks-copy",
+                                             "menu-visibility-toggle", "settings-section-navigation", "escape-closes-custom-sheet", "return-closes-custom-sheet"})
+
     def test_isolated_preview_windows_render_and_exit(self):
         root = Path(__file__).resolve().parents[1]
         executable = Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"

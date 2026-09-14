@@ -11,7 +11,9 @@ struct WakeLeaseApp: App {
     init() {
         let arguments = CommandLine.arguments
         let preview = arguments.firstIndex(of: "--preview").map { index in index + 1 < arguments.count ? arguments[index + 1] : "active" }
-        let model = MenuModel(previewState: preview)
+        let name = try? PreviewUIAudit.pasteboardName(arguments: arguments)
+        let pasteboard = name.map { NSPasteboard(name: NSPasteboard.Name(rawValue: $0)) } ?? .general
+        let model = MenuModel(previewState: preview, pasteboard: pasteboard)
         _model = State(initialValue: model)
         LeaseAppDelegate.model = model
     }

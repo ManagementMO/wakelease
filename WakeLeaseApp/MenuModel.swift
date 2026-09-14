@@ -31,6 +31,7 @@ final class MenuModel {
     @ObservationIgnored private var editGeneration: UInt64 = 0
     @ObservationIgnored private var lastNotifiedCutout: Date?
     @ObservationIgnored private let client = LeaseSocketClient()
+    @ObservationIgnored private let pasteboard: NSPasteboard
 
     var presentation: LeasePresentation {
         LeasePresentation(status: status)
@@ -42,7 +43,8 @@ final class MenuModel {
         LeaseIntegrationManager(cliPath: ServiceRegistry.bundledCLI.path)
     }
 
-    init(previewState: String? = nil) {
+    init(previewState: String? = nil, pasteboard: NSPasteboard = .general) {
+        self.pasteboard = pasteboard
         preview = previewState != nil
         self.previewState = previewState
         if let previewState { setPreview(previewState) }
@@ -231,7 +233,7 @@ final class MenuModel {
     }
 
     func copy(_ text: String) {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        pasteboard.clearContents(); pasteboard.setString(text, forType: .string)
     }
 
     private func notifyCutoutIfNeeded(_ event: LeaseEvent?) {

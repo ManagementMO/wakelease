@@ -93,6 +93,7 @@ struct CustomIntegrationSetup: View {
             }
         }
         .padding(22).frame(width: 620, height: 650)
+        .onChange(of: options) { _, _ in copied = nil }
         .onExitCommand(perform: close)
     }
 }

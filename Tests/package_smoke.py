@@ -23,6 +23,12 @@ class PackageSmoke(unittest.TestCase):
             cli = app / "Contents/Helpers/wakelease"
             self.assertIn("WakeLease 0.1.0", subprocess.check_output([str(executable), "--version"], text=True, timeout=5))
             self.assertIn("wakelease 0.1.0", subprocess.check_output([str(cli), "version"], text=True, timeout=5))
+            for arguments in [["--preview-pasteboard", "wakelease-ui-test-00"],
+                              ["--preview", "normal", "--preview-pasteboard", "NSGeneralPboard"],
+                              ["--preview", "normal", "--preview-pasteboard"],
+                              ["--preview", "normal", "--preview-pasteboard", "wakelease-ui-test-00", "--uninstall", "--dry-run"]]:
+                rejected = subprocess.run([str(executable), *arguments], capture_output=True, timeout=5)
+                self.assertEqual(rejected.returncode, 64, rejected.stderr.decode(errors="replace"))
             for relative in ["Contents/Library/LaunchAgents/WakeLeaseDaemon", "Contents/Library/LaunchDaemons/WakeLeaseHelper"]:
                 rejected = subprocess.run([str(app / relative)], capture_output=True, timeout=5)
                 self.assertEqual(rejected.returncode, 78, rejected.stderr.decode(errors="replace"))
