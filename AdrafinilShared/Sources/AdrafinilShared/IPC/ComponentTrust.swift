@@ -37,7 +37,28 @@ public enum ComponentTrust {
         return text
     }
 
+    public static var installedRecord: InstalledComponentTrust? {
+        guard let record = try? InstalledComponentTrust.load() else { return nil }
+        var code: SecCode?
+        var staticCode: SecStaticCode?
+        var information: CFDictionary?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+              SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+              SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &information) == errSecSuccess,
+              let values = information as? [String: Any], let identifier = values[kSecCodeInfoIdentifier as String] as? String,
+              let text = record.requirement(identifier: identifier) else { return nil }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement,
+              SecCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate), requirement) == errSecSuccess else { return nil }
+        return record
+    }
+
+    public static var hasRuntimeIdentity: Bool {
+        currentTeam != nil || installedRecord != nil
+    }
+
     public static func requirement(role: Role) -> String? {
-        requirement(team: currentTeam, role: role)
+        if let currentTeam { return requirement(team: currentTeam, role: role) }
+        return installedRecord?.requirement(identifier: role.identifier)
     }
 }
