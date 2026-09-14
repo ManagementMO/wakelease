@@ -22,6 +22,7 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 - Dead owners, PID reuse and corrupt persisted lifetimes cannot silently renew unbounded protection.
 - Replayed global controls cannot release newer work or undo a newer pause.
 - Native menu insertion ignores unchanged preference writes, preventing a SwiftUI update loop.
+- Custom-integration copy feedback resets when any recipe option changes, preventing an edited command from retaining a stale “Copied” indication.
 - Status distinguishes zero local demand from another user's helper claim.
 - Removal prevents new wake claims during teardown and across helper restart; same-user maintenance cannot cancel an overlapping transaction.
 - The CI permission fixture validates its temporary path lexically so Foundation's existing-path `/private` alias rewriting cannot reject its own cleanup.
@@ -37,7 +38,8 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 
 - Automated tests and simulation exercise the lease, transport, installer, command and power-coordination boundaries without changing host sleep settings.
 - CI verifies full unsigned Xcode builds and actual Swift/CLI/host-fixture execution on Apple Silicon/macOS 26 and Intel/macOS 15, including root-owned temporary ticket permissions and universal development packaging.
-- Local debug and optimized release suites pass 550 Swift tests; 28 CLI cases and eight native preview cases also pass. Pi's real SDK is exercised with an offline mock model, and OS signing fixtures reject spoofed roles.
+- Local debug and optimized release suites pass 553 Swift tests; 28 CLI cases and eight native preview cases also pass. Pi's real SDK covers eight offline success/failure/cancellation/retry/queue scenarios.
+- Native accessibility and keyboard checks exercise preview settings and custom recipes using a separate clipboard and existing permission only. Live anonymous NSXPC fixtures verify listener rejection before the delegate and client reply rejection without registering services.
 - The Xcode project retains compatible format 77 without relaxing deployment or signing settings. CI artifacts use a pinned Node 24 uploader and fail if expected outputs are absent.
 - Live Apple-issued signing, ServiceManagement approval/removal and physical MacBook sleep behavior remain separate release gates.
 - Integration support is scoped by the evidence in [Docs/INTEGRATIONS.md](Docs/INTEGRATIONS.md), not implied by a configured hook.

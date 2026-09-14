@@ -15,7 +15,11 @@ All power controllers used by unit/integration tests are fake or explicitly simu
 
 The SwiftPM root builds all four executables. The source-testing opt-in uses pinned Swift Testing 6.2.4 and SwiftSyntax 602.0.0 to support Command Line Tools installations missing the bundled Testing module. Keep its scratch directory separate from other toolchain/macro versions.
 
-UI smoke tests require a logged-in macOS desktop and exercise fixture windows, not real services. Their timeout detects the regression where writing unchanged observable preferences from `MenuBarExtra(isInserted:)` caused a main-menu graph loop. PNG existence is not an accessibility or human visual-review certification.
+UI smoke tests require a logged-in macOS desktop and exercise fixture windows, not real services. Their timeout detects the regression where writing unchanged observable preferences from `MenuBarExtra(isInserted:)` caused a main-menu graph loop. Eight PNG preview cases remain distinct from interaction testing.
+
+The native accessibility client uses the existing macOS Accessibility permission; it never requests or changes permission. It verifies the exact child executable under this checkout's `.build`, targets only that PID, and uses a separate `wakelease-ui-test-*` clipboard. A tree check verifies custom-setup labels. Ten interaction checks cover settings sections, menu-bar preference toggling, Tab/Shift-Tab, copying the current command and JSON recipe, invalid-input behavior, and Escape/Return sheet dismissal. The test reproduced stale “Copied” feedback after editing a source ID; changing recipe options now clears only the feedback, not the clipboard.
+
+Use `WAKELEASE_REQUIRE_UI_AUDIT=1 python3 Tests/ui_smoke.py` to require those native audits rather than skip when permission is unavailable. CI typechecks the audit client but does not claim headless interactive execution. This is not a manual VoiceOver, large-text or live service-approval certification.
 
 The lint script uses fixed, checksum-verified SwiftFormat/SwiftLint releases. SourceKitten otherwise skips the Command Line Tools framework location; the runner supplies its supported toolchain override for that process. No lint rule is disabled for this. Existing size/complexity/style warnings remain distinguishable from errors.
 
@@ -41,6 +45,7 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 - Malformed/foreign hook configuration, receipt ownership, backups, byte-exact restoration and modified plugins.
 - Read-only doctor semantics and refusal to uninstall recovery mechanisms before confirmed cleanup.
 - OS Security.framework rejection of unrelated signed binaries, unsigned binaries, and valid ad-hoc binaries spoofing all three production role identifiers.
+- Live anonymous NSXPC round trips with the test process's own designated requirement, listener rejection before the delegate runs, and client rejection of an untrusted reply. These temporary same-process fixtures register no launch service and execute no power operation; they are not production-certificate acceptance tests.
 - Explicit flock release while a duplicated descriptor remains alive, including repeated parallel-suite verification.
 - Actual generated hook/script execution and a real pinned Pi SDK lifecycle using a mock model, an isolated home and network denial.
 - Durable helper removal admission, owner/transaction cancellation, restart fencing, rollback failure visibility and same-user maintenance exclusion.
@@ -60,7 +65,9 @@ The idle check measures only its owned simulation daemon through `proc_pidinfo`,
 
 ## Evidence recorded so far
 
-The inherited baseline was **416 tests in 41 suites**. The current checkpoint is **550 Swift tests in 64 suites**, **28 CLI end-to-end cases**, the offline Pi SDK fixture, and package/repository checks. All five jobs for `6303ec6` passed in [GitHub Actions run 34809565795](https://github.com/ManagementMO/wakelease/actions/runs/34809565795) on September 14, 2026:
+The expanded local suite now passes **553 Swift tests in 65 suites** in debug and release configurations, **28 CLI cases**, **eight Pi SDK lifecycle scenarios**, and **three native UI test methods** covering eight rendered previews plus accessibility-tree and ten interaction checks. The packaged-preview argument guards and repository/lint checks also pass.
+
+The inherited baseline was **416 tests in 41 suites**. The earlier published CI checkpoint covered **550 Swift tests in 64 suites**, 28 CLI cases and packaging. All five jobs for `6303ec6` passed in [GitHub Actions run 34809565795](https://github.com/ManagementMO/wakelease/actions/runs/34809565795) on September 14, 2026; consult the current commit's CI run for subsequent additions:
 
 | Execution environment | Toolchain | Verified scope |
 | --- | --- | --- |
@@ -85,7 +92,7 @@ Concurrent CLI latency is load-sensitive and includes process startup and persis
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
 | Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `6303ec6`; see the recorded CI checkpoint above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
-| Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Requirement construction, OS rejection of signed wrong-role and ad-hoc spoofed-role binaries, plus unsigned-start rejection covered; positive production-signed XPC peers unverified |
+| Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Static-code tests, unsigned-start rejection and live anonymous NSXPC requirement enforcement covered. The positive transport fixture uses the test binary's own requirement; production-signed, cross-process product peers remain unverified |
 | Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
 | In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |
 | Uninstall | Active work paused, `SleepDisabled 0`, services/owned hooks/link removed, foreign edits preserved, coordinated multi-user removal | Coordinator/ownership fakes covered; live removal unverified |
@@ -95,6 +102,6 @@ Concurrent CLI latency is load-sensitive and includes process startup and persis
 | Battery/thermal | Safe admission, hysteresis, unknown sensors, user-visible degradation | Fake sensor coverage; no deliberate hardware stress |
 | OS/architecture | macOS 15.4 floor through current release, Apple Silicon and Intel | Both architectures compiled and executed in CI; universal slices/minimum 15.4, ad-hoc integrity and ZIP checksums verified. Runtime evidence covers 26.6.2 ARM64 and 15.7.9 Intel; exact 15.4 and physical Intel MacBook sleep behavior remain unverified |
 | Live integrations | Paid/free host sessions, approvals, cancellation, retry, background tasks | Generated program fixtures and real Pi SDK with a mocked offline model; live provider/interactive host approval still unverified; see INTEGRATIONS.md |
-| Accessibility/UX | VoiceOver, keyboard-only navigation, large text, hidden icon/reopen, real settings | Native primitives and visual previews; full manual audit pending |
+| Accessibility/UX | VoiceOver, keyboard-only navigation, large text, hidden icon/reopen, real settings | Native AX tree and ten keyboard/action checks pass in preview with an isolated clipboard; eight visual previews pass. Manual VoiceOver/large-text and production-permission workflows remain pending |
 
 Use the supervised [A–K hardware procedure](HARDWARE_TESTS.md) for actual MacBook validation. Do not mark a gate passed by extrapolating from a compiler, a fake controller, a screenshot, or upstream's physical results. Record exact artifact and platform evidence. See [RECOVERY.md](RECOVERY.md) before any physical work.
