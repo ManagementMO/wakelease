@@ -36,7 +36,10 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 ### Verification scope
 
 - Automated tests and simulation exercise the lease, transport, installer, command and power-coordination boundaries without changing host sleep settings.
-- The first public CI run verified a full unsigned Xcode app build. Live Apple-issued signing, ServiceManagement approval/removal and physical MacBook sleep behavior remain separate release gates.
+- CI verifies full unsigned Xcode builds and actual Swift/CLI/host-fixture execution on Apple Silicon/macOS 26 and Intel/macOS 15, including root-owned temporary ticket permissions and universal development packaging.
+- Local debug and optimized release suites pass 550 Swift tests; 28 CLI cases and eight native preview cases also pass. Pi's real SDK is exercised with an offline mock model, and OS signing fixtures reject spoofed roles.
+- The Xcode project retains compatible format 77 without relaxing deployment or signing settings. CI artifacts use a pinned Node 24 uploader and fail if expected outputs are absent.
+- Live Apple-issued signing, ServiceManagement approval/removal and physical MacBook sleep behavior remain separate release gates.
 - Integration support is scoped by the evidence in [Docs/INTEGRATIONS.md](Docs/INTEGRATIONS.md), not implied by a configured hook.
 
 ## Upstream foundation

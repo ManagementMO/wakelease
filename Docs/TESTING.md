@@ -25,7 +25,8 @@ Additional fixed-program C check:
 clang -fsyntax-only -Wall -Wextra -Werror \
   -I AdrafinilShared/Sources/WakeLeaseProcess/include \
   AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c \
-  AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c
+  AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c \
+  AdrafinilShared/Sources/WakeLeaseProcess/RemovalPermissions.c
 ```
 
 ## Regression areas
@@ -59,15 +60,31 @@ The idle check measures only its owned simulation daemon through `proc_pidinfo`,
 
 ## Evidence recorded so far
 
-The inherited baseline was **416 tests in 41 suites**. After the production/UI/installer additions, **550 Swift tests in 64 suites** passed on Apple Silicon, macOS 26.6.2 (25G83), Apple Swift 6.3.3, using the source-testing path. Twenty-eight CLI end-to-end cases, eight UI preview cases and a disposable package smoke test also passed at that checkpoint. The descriptor-alias lock fix also passed eight consecutive full parallel-suite runs. An isolated idle sample measured 0.0006% CPU and 8.36 MiB resident memory over five seconds for the simulation daemon only. Subsequent counts and measurements should be taken from fresh command output rather than treated as a permanent certification.
+The inherited baseline was **416 tests in 41 suites**. The current checkpoint is **550 Swift tests in 64 suites**, **28 CLI end-to-end cases**, the offline Pi SDK fixture, and package/repository checks. All five jobs for `6303ec6` passed in [GitHub Actions run 34809565795](https://github.com/ManagementMO/wakelease/actions/runs/34809565795) on September 14, 2026:
 
-Observed concurrent CLI latency in simulation varied with load: examples ranged from roughly 14–19 ms median and 18–30 ms p95, with an earlier burst above 60 ms p95. This includes CLI startup and persistence, not certified privileged transition latency. Do not advertise an unconditional sub-50-ms result or zero idle CPU from these samples.
+| Execution environment | Toolchain | Verified scope |
+| --- | --- | --- |
+| Apple Silicon, macOS 26.6.2 (25G83) | Xcode 26.6 / Swift 6.3.3 | Full Xcode app build, Swift/CLI/host fixtures, root-owned ticket fixture, universal development packaging |
+| Intel, macOS 15.7.9 (24G830) | Xcode 26.3 / Swift 6.2.4 | The same build, execution and filesystem checks; not merely cross-compilation |
+
+Locally, the Swift suite also passed in **release configuration**, and the 28 CLI cases, Pi lifecycle fixture and eight native preview cases passed against optimized release executables. The descriptor-alias lock fix passed eight consecutive full parallel-suite runs. To repeat optimized Swift verification, add `--configuration release` to the source-testing command; `WAKELEASE_BIN_DIR` selects the corresponding executables for Python checks.
+
+Five-second simulation-daemon idle samples (not the production helper, real sensors or UI):
+
+| Sample | CPU | Resident memory |
+| --- | --- | --- |
+| Local debug | 0.0006% | 8.36 MiB |
+| Local release | 0.0027% | 8.27 MiB |
+| Apple Silicon CI | 0.0021% | 10.20 MiB |
+| Intel CI | 0.0012% | 3.57 MiB |
+
+Concurrent CLI latency is load-sensitive and includes process startup and persistence. One local release sample was 16.2 ms median / 23.6 ms p95. The shared debug CI runners measured 52.4 / 113.0 ms on Apple Silicon and 64.4 / 74.1 ms on Intel. These are not certified privileged transition timings and do **not** establish an unconditional sub-50-ms guarantee. Subsequent counts and measurements must come from fresh output, not be treated as permanent certification.
 
 ## Remaining release gates
 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
-| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed for `bc205a1`, including the root-owned filesystem fixture, in [GitHub Actions](https://github.com/ManagementMO/wakelease/actions/runs/34792622643); subsequent changes require a fresh CI run |
+| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `6303ec6`; see the recorded CI checkpoint above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
 | Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Requirement construction, OS rejection of signed wrong-role and ad-hoc spoofed-role binaries, plus unsigned-start rejection covered; positive production-signed XPC peers unverified |
 | Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
 | In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |
@@ -76,7 +93,7 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 | Final release | Actual prompt closed-lid sleep, while preserving clamshell/external-display use | Fake policy checks only |
 | Crash/recovery | Daemon crash, helper crash, helper wedge, relaunch, interrupted clear | Simulated/fake coverage; physical verification required |
 | Battery/thermal | Safe admission, hysteresis, unknown sensors, user-visible degradation | Fake sensor coverage; no deliberate hardware stress |
-| OS/architecture | macOS 15.4 floor through current release, Apple Silicon and Intel | ARM64, x86_64 and assembled universal release binaries compiled; inspected both slices and minimum 15.4; ad-hoc integrity and ZIP checksum verified. Execution evidence is Apple Silicon on 26.6.2; Intel hardware unverified |
+| OS/architecture | macOS 15.4 floor through current release, Apple Silicon and Intel | Both architectures compiled and executed in CI; universal slices/minimum 15.4, ad-hoc integrity and ZIP checksums verified. Runtime evidence covers 26.6.2 ARM64 and 15.7.9 Intel; exact 15.4 and physical Intel MacBook sleep behavior remain unverified |
 | Live integrations | Paid/free host sessions, approvals, cancellation, retry, background tasks | Generated program fixtures and real Pi SDK with a mocked offline model; live provider/interactive host approval still unverified; see INTEGRATIONS.md |
 | Accessibility/UX | VoiceOver, keyboard-only navigation, large text, hidden icon/reopen, real settings | Native primitives and visual previews; full manual audit pending |
 

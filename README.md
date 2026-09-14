@@ -8,7 +8,7 @@ WakeLease is a native macOS menu-bar utility for local jobs, coding agents, buil
 
 It is an **MIT-licensed derivative of [Adrafinil](https://github.com/kageroumado/adrafinil)** by kageroumado and contributors. The upstream power-management work, helper architecture, monitors, and regression tests are the foundation—not inventions of this project. See [UPSTREAM.md](UPSTREAM.md) and [LICENSE](LICENSE). This is an independent project without upstream endorsement.
 
-> **Pre-release engineering build.** The CLI, broker, native UI, and production power path compile and have automated coverage. Live signed-peer authorization, service approval/update/uninstall, Intel execution, and physical closed-lid recovery remain release gates. No signed/notarized public WakeLease download or Homebrew cask is available from this checkout.
+> **Pre-release engineering build.** The CLI, broker, native UI, and production power path compile and pass automated checks on Apple Silicon/macOS 26 and Intel/macOS 15. Live production-signed XPC, service approval/update/uninstall, and physical closed-lid recovery remain release gates. No signed/notarized public WakeLease download or Homebrew cask is available from this checkout.
 
 ## The model
 
