@@ -1,0 +1,36 @@
+name: Disposable service registration probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Ad-hoc service registration (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    env:
+      WAKELEASE_REGISTRATION_PROBE: approved-disposable-runner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Record the disposable platform
+        run: |
+          sw_vers
+          uname -m
+          xcrun swiftc --version
+      - name: Register and remove harmless dummy services
+        run: python3 Tests/service_registration_probe.py
+      - name: Retain observed results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: service-registration-${{ matrix.runner }}
+          path: ${{ runner.temp }}/wakelease-registration-results.json
+          retention-days: 7
+          if-no-files-found: warn
