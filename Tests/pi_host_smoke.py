@@ -44,6 +44,7 @@ class PiHostSmoke(unittest.TestCase):
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 report = json.loads(run.stdout.strip().splitlines()[-1])
                 self.assertEqual(report["networkAttempts"], 0)
+                self.assertEqual(len(report["verified"]), 8)
                 print("Pi host evidence: " + json.dumps(report, sort_keys=True))
             finally:
                 daemon.terminate()
