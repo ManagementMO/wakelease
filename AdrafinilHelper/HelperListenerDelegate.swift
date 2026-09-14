@@ -37,7 +37,7 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate, @unchecked 
         // Only accept connections from binaries signed by us. The daemon is the only
         // legitimate caller. The listener's exact code requirement rejects invalid peers
         // before this delegate is called; there is no unsigned-development fallback.
-        guard ComponentTrust.currentTeam != nil, newConnection.effectiveUserIdentifier > 0 else { return false }
+        guard ComponentTrust.hasRuntimeIdentity, newConnection.effectiveUserIdentifier > 0 else { return false }
         let uid = newConnection.effectiveUserIdentifier
         let token = UUID()
         do { try controller.connect(uid: uid, token: token) }

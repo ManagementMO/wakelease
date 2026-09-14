@@ -7,6 +7,7 @@ final class HelperPowerController: @unchecked Sendable {
     private let blocker: SleepBlocker
     private var ledger: HelperDemandLedger
     private let removalStore: HelperRemovalStore
+    private let installedTrust: InstalledComponentTrust?
     private var removalIssue: Error?
     private var timer: DispatchSourceTimer?
     private var nextTick = EarliestDeadline()
@@ -15,6 +16,7 @@ final class HelperPowerController: @unchecked Sendable {
     init(blocker: SleepBlocker, disconnectGrace: TimeInterval, removalStore: HelperRemovalStore = HelperRemovalStore()) {
         self.blocker = blocker
         self.removalStore = removalStore
+        installedTrust = ComponentTrust.installedRecord
         do { ledger = try HelperDemandLedger(disconnectGrace: disconnectGrace, removal: removalStore.load()) }
         catch { ledger = HelperDemandLedger(disconnectGrace: disconnectGrace); removalIssue = error }
         queue.async { [self] in schedule() }
@@ -58,6 +60,7 @@ final class HelperPowerController: @unchecked Sendable {
                 do { try removalStore.save(reservation) }
                 catch { removalIssue = error; throw error }
                 try blocker.set(blocked: false)
+                try installedTrust?.grantRemoval(to: uid)
                 log.notice("helper_removal_reserved — uid=\(uid, privacy: .public)")
                 reply(true, nil)
             } catch { reply(false, error as NSError) }
@@ -71,6 +74,7 @@ final class HelperPowerController: @unchecked Sendable {
                 guard let reservation = ledger.removal else { throw HelperRemovalFailure.invalidReservation }
                 var next = ledger
                 try next.cancelRemoval(uid: uid, id: id)
+                try installedTrust?.restore()
                 try removalStore.remove(reservation)
                 ledger = next
                 removalIssue = nil

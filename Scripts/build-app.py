@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--sign", default=os.environ.get("WAKELEASE_SIGN_IDENTITY", "-"))
     parser.add_argument("--team", default=os.environ.get("WAKELEASE_DEVELOPMENT_TEAM", ""))
     parser.add_argument("--zip", action="store_true")
+    parser.add_argument("--community", action="store_true", help="Build an installer-required community bundle without an Apple certificate")
     args = parser.parse_args()
     destination = args.output.expanduser().absolute()
     if destination.exists() or destination.is_symlink():
@@ -40,6 +41,8 @@ def main():
         parser.error("Production signing requires --team with the certificate's 10-character Team Identifier.")
     if args.bin_dir and args.sign != "-":
         parser.error("--bin-dir is a development-only shortcut, not a production release path.")
+    if args.community and (args.sign != "-" or args.configuration != "release" or args.bin_dir):
+        parser.error("Community bundles require a fresh release build with ad-hoc signing and administrator installation.")
 
     constants = (ROOT / "AdrafinilShared/Sources/AdrafinilShared/Constants.swift").read_text()
     name = re.search(r'let name = "([^"]+)"', constants)[1]
@@ -120,15 +123,18 @@ def main():
         }
         (stage / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
         provenance = {"version": version, "commit": output("git", "rev-parse", "HEAD"),
-                      "dirty": bool(output("git", "status", "--porcelain")), "developmentOnly": args.sign == "-",
-                      "configuration": args.configuration, "architecturesRequested": args.arch or ["native"], "architecturesBuilt": architecture_manifest}
+                      "dirty": bool(output("git", "status", "--porcelain")), "developmentOnly": args.sign == "-" and not args.community,
+                      "requiresInstallerApproval": args.community, "configuration": args.configuration, "architecturesRequested": args.arch or ["native"], "architecturesBuilt": architecture_manifest}
         (resources / "WakeLeaseBuild.json").write_text(json.dumps(provenance, indent=2) + "\n")
         run("codesign", "--force", "--sign", args.sign, "--options", "runtime", "--timestamp=none" if args.sign == "-" else "--timestamp", stage)
         run("codesign", "--verify", "--deep", "--strict", stage)
         shutil.move(str(stage), destination)
 
     print("Built:", destination)
-    print("Development-only ad-hoc bundle: privileged services will refuse to operate." if args.sign == "-" else "Signed bundle built. Notarization and hardware release gates still apply.")
+    if args.community:
+        print("Community bundle built. Administrator-installed component pins are required before services can operate; this is not notarized or hardware-certified.")
+    else:
+        print("Development-only ad-hoc bundle: privileged services will refuse to operate." if args.sign == "-" else "Signed bundle built. Notarization and hardware release gates still apply.")
     if args.zip:
         archive = destination.with_suffix(".zip")
         if archive.exists() or archive.is_symlink() or archive.with_suffix(".zip.sha256").exists() or archive.with_suffix(".zip.sha256").is_symlink():

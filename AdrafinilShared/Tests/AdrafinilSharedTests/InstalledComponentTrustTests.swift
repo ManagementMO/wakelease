@@ -131,6 +131,137 @@ struct InstalledComponentTrustTests {
     }
 
     @Test
+    func `reserved removal can revoke and restore the same approved record`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            try record.grantRemoval(to: getuid(), directory: directory, ownerUID: getuid())
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == record)
+            try record.remove(directory: directory, ownerUID: getuid())
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+            try record.restore(directory: directory, ownerUID: getuid())
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == record)
+        }
+    }
+
+    @Test
+    func `stale cleanup cannot replace or delete a newer installation`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            let newer = String(decoding: fixture, as: UTF8.self).replacingOccurrences(of: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", with: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            try Data(newer.utf8).write(to: directory.appendingPathComponent("components.json"))
+            #expect(throws: LocalIOError.self) { try record.grantRemoval(to: getuid(), directory: directory, ownerUID: getuid()) }
+            #expect(throws: LocalIOError.self) { try record.remove(directory: directory, ownerUID: getuid()) }
+            #expect(throws: LocalIOError.self) { try record.restore(directory: directory, ownerUID: getuid()) }
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())?.build == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        }
+    }
+
+    @Test
+    func `package approval is published only after payload validation`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let previous = try #require(loaded)
+            let next = InstalledComponentTrust(version: 1, build: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", hashes: previous.hashes)
+            let transaction = InstalledPackageTransaction(directory: directory, ownerUID: getuid())
+            try transaction.begin(next, verifyIdle: {})
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+            #expect(throws: LocalIOError.self) { try transaction.activate(next) { throw LocalIOError.unsafePath } }
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+            try transaction.activate(next, verifyPayload: {})
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == next)
+        }
+    }
+
+    @Test
+    func `work starting during installer preflight rolls back the admission fence`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            let transaction = InstalledPackageTransaction(directory: directory, ownerUID: getuid())
+            var checks = 0
+            #expect(throws: LocalIOError.self) {
+                try transaction.begin(record) {
+                    checks += 1
+                    if checks == 2 { throw LocalIOError.alreadyRunning }
+                }
+            }
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == record)
+        }
+    }
+
+    @Test
+    func `an older installer cannot finish or cancel a newer transaction`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            let other = InstalledComponentTrust(version: 1, build: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", hashes: record.hashes)
+            let transaction = InstalledPackageTransaction(directory: directory, ownerUID: getuid())
+            try transaction.begin(record, verifyIdle: {})
+            #expect(throws: LocalIOError.self) { try transaction.begin(other, verifyIdle: {}) }
+            #expect(throws: LocalIOError.self) { try transaction.activate(other, verifyPayload: {}) }
+            #expect(throws: LocalIOError.self) { try transaction.revoke(other) }
+            #expect(throws: LocalIOError.self) { try transaction.cancel(other, verifyIdle: {}) }
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+            try transaction.cancel(record, verifyIdle: {})
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == record)
+        }
+    }
+
+    @Test
+    func `a shared source revision does not make different component builds interchangeable`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            var hashes = record.hashes
+            hashes[WakeLeaseIdentity.helperBundleID] = ["ffffffffffffffffffffffffffffffffffffffff"]
+            let other = InstalledComponentTrust(version: 1, build: record.build, hashes: hashes)
+            let transaction = InstalledPackageTransaction(directory: directory, ownerUID: getuid())
+            try transaction.begin(record, verifyIdle: {})
+            #expect(throws: LocalIOError.self) { try transaction.activate(other, verifyPayload: {}) }
+            #expect(throws: LocalIOError.self) { try transaction.revoke(other) }
+            #expect(throws: LocalIOError.self) { try transaction.cancel(other, verifyIdle: {}) }
+            try transaction.cancel(record, verifyIdle: {})
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == record)
+        }
+    }
+
+    @Test
+    func `an administrator can revoke unused installation approval through its own transaction`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            let transaction = InstalledPackageTransaction(directory: directory, ownerUID: getuid())
+            try transaction.begin(record, verifyIdle: {})
+            try transaction.revoke(record)
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+            #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("installation.pending").path))
+            #expect(throws: LocalIOError.self) { try transaction.activate(record, verifyPayload: {}) }
+        }
+    }
+
+    @Test
+    func `removal and rollback cannot mutate pins during package installation`() throws {
+        try withStore { directory in
+            let loaded = try InstalledComponentTrust.load(directory: directory, ownerUID: getuid())
+            let record = try #require(loaded)
+            try InstalledPackageTransaction(directory: directory, ownerUID: getuid()).begin(record, verifyIdle: {})
+            #expect(throws: LocalIOError.self) { try record.grantRemoval(to: getuid(), directory: directory, ownerUID: getuid()) }
+            #expect(throws: LocalIOError.self) { try record.remove(directory: directory, ownerUID: getuid()) }
+            #expect(throws: LocalIOError.self) { try record.restore(directory: directory, ownerUID: getuid()) }
+        }
+    }
+
+    @Test
+    func `an unfinished package transaction cannot authorize components`() throws {
+        try withStore { directory in
+            try Data("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".utf8).write(to: directory.appendingPathComponent("installation.pending"))
+            #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)
+        }
+    }
+
+    @Test
     func `missing pins do not grant an identity`() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wakelease-trust-missing-" + UUID().uuidString)
         #expect(try InstalledComponentTrust.load(directory: directory, ownerUID: getuid()) == nil)

@@ -4,7 +4,7 @@ import OSLog
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.contains("--help") {
-    print("WakeLeaseDaemon [--simulate [--state-dir <private-directory>]]\nProduction requires an Apple-issued team signature and the standard per-user state directory.")
+    print("WakeLeaseDaemon [--simulate [--state-dir <private-directory>]]\nProduction requires installer-approved component pins or an Apple-issued team signature, and the standard per-user state directory.")
     exit(0)
 }
 var directory = WakeLeasePaths.directory
@@ -23,8 +23,8 @@ while index < arguments.count {
     }
     index += 1
 }
-guard getuid() != 0, simulate || (ComponentTrust.currentTeam != nil && directory.standardizedFileURL == WakeLeasePaths.standardDirectory.standardizedFileURL) else {
-    FileHandle.standardError.write(Data("Production requires a team-signed user daemon and its standard state directory. Use --simulate for unsigned development; it does not keep the Mac awake.\n".utf8))
+guard getuid() != 0, simulate || (ComponentTrust.hasRuntimeIdentity && directory.standardizedFileURL == WakeLeasePaths.standardDirectory.standardizedFileURL) else {
+    FileHandle.standardError.write(Data("Production requires an installer-approved or team-signed user daemon and its standard state directory. Use --simulate for uninstalled development; it does not keep the Mac awake.\n".utf8))
     exit(78)
 }
 let daemon = LeaseDaemonRuntime(directory: directory, simulation: simulate)

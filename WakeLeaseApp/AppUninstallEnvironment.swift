@@ -9,6 +9,7 @@ final class AppUninstallEnvironment: UninstallEnvironment {
     private let directory = WakeLeasePaths.standardDirectory
     private var confirmed = false
     private let maintenance = HelperMaintenanceClient()
+    private let installedTrust = ComponentTrust.installedRecord
     private var reservation: HelperRemovalReservation?
     private var maintenanceLock: Int32?
 
@@ -74,6 +75,7 @@ final class AppUninstallEnvironment: UninstallEnvironment {
 
     func cleanOwnedState(purge: Bool) async throws {
         guard confirmed, SMAppService.daemon(plistName: "LaunchDaemon.plist").status == .notRegistered else { throw HelperRemovalFailure.reserved }
+        try installedTrust?.remove()
         if let reservation {
             try HelperRemovalStore().remove(reservation)
             self.reservation = nil

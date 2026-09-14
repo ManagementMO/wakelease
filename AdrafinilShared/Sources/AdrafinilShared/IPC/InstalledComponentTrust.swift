@@ -25,6 +25,7 @@ public struct InstalledComponentTrust: Codable, Equatable, Sendable {
         } catch LocalIOError.system(ENOENT) {
             return nil
         }
+        if try storage.read(name: InstalledPackageTransaction.pendingFilename, maximum: 1_024) != nil { return nil }
         let descriptor = openat(storage.descriptor, "components.json", O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         if descriptor < 0, errno == ENOENT { return nil }
         guard descriptor >= 0 else { throw LocalIOError.unsafePath }
@@ -37,6 +38,54 @@ public struct InstalledComponentTrust: Codable, Equatable, Sendable {
         guard let data = try handle.read(upToCount: 16_385), data.count <= 16_384,
               let record = try? JSONDecoder().decode(Self.self, from: data), record.isValid else { throw LocalIOError.unsafePath }
         return record
+    }
+
+    public func grantRemoval(to uid: UInt32, directory: URL = Self.standardDirectory, ownerUID: UInt32 = 0) throws {
+        guard uid > 0 else { throw LocalIOError.unsafePath }
+        try updateAccess(removingUser: uid, directory: directory, ownerUID: ownerUID)
+    }
+
+    public func remove(directory: URL = Self.standardDirectory, ownerUID: UInt32 = 0) throws {
+        let storage: SecureDirectory
+        do {
+            storage = try SecureDirectory(url: directory, create: false, privateDirectory: false, ownerUID: ownerUID, requireProtectedACLs: true)
+        } catch LocalIOError.system(ENOENT) {
+            return
+        }
+        guard try storage.read(name: InstalledPackageTransaction.pendingFilename, maximum: 1_024) == nil else { throw LocalIOError.alreadyRunning }
+        guard let current = try Self.load(directory: directory, ownerUID: ownerUID) else { return }
+        guard current == self else { throw LocalIOError.unsafePath }
+        guard let data = try storage.read(name: "components.json", maximum: 16_384),
+              try JSONDecoder().decode(Self.self, from: data) == self else { throw LocalIOError.unsafePath }
+        try storage.remove(name: "components.json", matching: data)
+        guard fsync(storage.descriptor) == 0 else { throw LocalIOError.system(errno) }
+    }
+
+    public func restore(directory: URL = Self.standardDirectory, ownerUID: UInt32 = 0) throws {
+        try updateAccess(removingUser: nil, directory: directory, ownerUID: ownerUID)
+    }
+
+    private func updateAccess(removingUser: UInt32?, directory: URL, ownerUID: UInt32) throws {
+        guard getuid() == ownerUID, isValid else { throw LocalIOError.unsafePath }
+        let storage = try SecureDirectory(url: directory, create: false, privateDirectory: false, ownerUID: ownerUID, requireProtectedACLs: true)
+        let lock = try storage.lock(name: "trust.lock")
+        defer { SecureDirectory.closeLock(lock) }
+        guard try storage.read(name: InstalledPackageTransaction.pendingFilename, maximum: 1_024) == nil else { throw LocalIOError.alreadyRunning }
+        if let current = try Self.load(directory: directory, ownerUID: ownerUID) {
+            guard current == self else { throw LocalIOError.unsafePath }
+        } else {
+            guard removingUser == nil else { throw LocalIOError.unsafePath }
+            try storage.write(JSONEncoder().encode(self), name: "components.json", permissions: 0o644)
+        }
+        let descriptor = openat(storage.descriptor, "components.json", O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw LocalIOError.system(errno) }
+        defer { Darwin.close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_uid == ownerUID, info.st_mode & S_IFMT == S_IFREG,
+              info.st_nlink == 1 else { throw LocalIOError.unsafePath }
+        let result = removingUser.map { wakelease_grant_removal(descriptor, $0) } ?? wakelease_clear_directory_acl(descriptor)
+        guard result == 0 else { throw LocalIOError.system(result) }
+        guard fsync(descriptor) == 0, fsync(storage.descriptor) == 0 else { throw LocalIOError.system(errno) }
     }
 
     private var isValid: Bool {

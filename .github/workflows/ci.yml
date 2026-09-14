@@ -71,8 +71,15 @@ jobs:
         env:
           WAKELEASE_HEADLESS: "1"
         run: python3 Tests/package_smoke.py
+      - name: Installer-required bundle and exact component verification
+        run: python3 Tests/community_package_smoke.py
       - name: Universal development package
         run: python3 Scripts/build-app.py --configuration release --sign - --arch arm64 --arch x86_64 --output .build/universal/WakeLease.app --zip
+      - name: Build community installer candidate without installing it
+        if: matrix.runner == 'macos-26'
+        run: |
+          python3 Scripts/build-app.py --community --configuration release --sign - --arch arm64 --arch x86_64 --output .build/community/WakeLease.app
+          python3 Scripts/build-community.py --app .build/community/WakeLease.app --output .build/community-distribution
       - name: Strict C syntax
         run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c AdrafinilShared/Sources/WakeLeaseProcess/RemovalPermissions.c
       - name: Native accessibility harness typecheck
@@ -89,6 +96,14 @@ jobs:
           path: |
             .build/universal/WakeLease.zip
             .build/universal/WakeLease.zip.sha256
+          retention-days: 7
+          if-no-files-found: error
+      - name: Retain community installer candidate
+        if: matrix.runner == 'macos-26'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: WakeLease-community-installer-preview
+          path: .build/community-distribution/
           retention-days: 7
           if-no-files-found: error
 

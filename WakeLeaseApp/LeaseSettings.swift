@@ -79,7 +79,7 @@ struct LeaseSettings: View {
                 LabeledContent("Status", value: model.presentation.title)
                 if model.preview { Text("Preview data only. No service or power operations are enabled.").foregroundStyle(.secondary) }
                 else if !ServiceRegistry.canInstall {
-                    Text("Unsigned development uses simulation. A packaged, team-signed app is required for privileged power control.")
+                    Text("Run the WakeLease installer from the DMG to approve this exact app and its helper components. Uninstalled development uses simulation; it does not keep the Mac awake.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Button("Enable WakeLease Services…") { model.installServices() }

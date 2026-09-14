@@ -10,7 +10,7 @@ final class HelperMaintenanceListener: NSObject, NSXPCListenerDelegate, @uncheck
     }
 
     func listener(_: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
-        guard ComponentTrust.currentTeam != nil, connection.effectiveUserIdentifier > 0 else { return false }
+        guard ComponentTrust.hasRuntimeIdentity, connection.effectiveUserIdentifier > 0 else { return false }
         connection.exportedInterface = NSXPCInterface(with: HelperMaintenanceProtocol.self)
         connection.exportedObject = HelperMaintenanceService(controller: controller, uid: connection.effectiveUserIdentifier)
         connection.resume()

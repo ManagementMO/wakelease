@@ -75,7 +75,7 @@ final class HelperMaintenanceClient {
 
     private func ensureConnection() throws -> NSXPCConnection {
         if let connection { return connection }
-        guard let requirement = ComponentTrust.requirement(role: .helper) else { throw Failure(message: "Maintenance requires a team-signed application and helper.") }
+        guard let requirement = ComponentTrust.requirement(role: .helper) else { throw Failure(message: "Maintenance requires matching installer-approved or team-signed application and helper components.") }
         let connection = NSXPCConnection(machServiceName: WakeLeaseIdentity.helperMaintenanceMachServiceName, options: .privileged)
         connection.setCodeSigningRequirement(requirement)
         connection.remoteObjectInterface = NSXPCInterface(with: HelperMaintenanceProtocol.self)

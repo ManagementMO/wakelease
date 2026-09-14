@@ -6,11 +6,13 @@ public enum ComponentTrust {
         case app
         case daemon
         case helper
+        case cli
         var identifier: String {
             switch self {
             case .app: WakeLeaseIdentity.appBundleID
             case .daemon: WakeLeaseIdentity.daemonBundleID
             case .helper: WakeLeaseIdentity.helperBundleID
+            case .cli: WakeLeaseIdentity.cliBundleID
             }
         }
     }

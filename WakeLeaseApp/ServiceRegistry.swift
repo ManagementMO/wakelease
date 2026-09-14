@@ -21,7 +21,7 @@ enum ServiceRegistry {
         Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier == WakeLeaseIdentity.appBundleID
     }
     static var canInstall: Bool {
-        isPackaged && ComponentTrust.currentTeam != nil
+        isPackaged && ComponentTrust.hasRuntimeIdentity
     }
 
     static func statuses() -> [String: String] {
@@ -33,17 +33,22 @@ enum ServiceRegistry {
     }
 
     static func install(preferences: WakeLeasePreferences) async throws -> String {
-        guard canInstall else { throw Failure(message: "Enable services from the packaged, team-signed app. Unsigned development uses the simulation daemon.") }
+        guard canInstall else { throw Failure(message: "Run the WakeLease installer from the DMG before enabling services, or use a matching team-signed bundle. Uninstalled development uses simulation.") }
         let lock = try SecureDirectory(url: WakeLeasePaths.standardDirectory, create: true).lock(name: "maintenance.lock")
         defer { SecureDirectory.closeLock(lock) }
         let bundle = Bundle.main.bundleURL
         try verify(bundle, role: .app)
+        try verify(bundledCLI, role: .cli)
         try verify(bundle.appendingPathComponent("Contents/Library/LaunchAgents/WakeLeaseDaemon"), role: .daemon)
         try verify(bundle.appendingPathComponent("Contents/Library/LaunchDaemons/WakeLeaseHelper"), role: .helper)
         let helper = SMAppService.daemon(plistName: "LaunchDaemon.plist")
         let daemon = SMAppService.agent(plistName: "LaunchAgent.plist")
         for service in [helper, daemon] where service.status == .notRegistered || service.status == .notFound {
-            try service.register()
+            do {
+                try service.register()
+            } catch {
+                guard ServiceRegistrationPolicy.isPendingApproval(error: error, requiresApproval: service.status == .requiresApproval) else { throw error }
+            }
         }
         if preferences.launchMenuAtLogin, SMAppService.mainApp.status == .notRegistered { try SMAppService.mainApp.register() }
         try CLILinkManager(stateDirectory: WakeLeasePaths.standardDirectory).install(target: bundledCLI)

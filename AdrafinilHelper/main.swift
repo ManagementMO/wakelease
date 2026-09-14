@@ -8,7 +8,7 @@ if arguments == ["--version"] || arguments == ["version"] {
     exit(0)
 }
 if arguments == ["--help"] {
-    print("WakeLeaseHelper is managed by SMAppService. It requires root and an Apple-issued team signature. Use WakeLeaseDaemon --simulate for unsigned development.")
+    print("WakeLeaseHelper is managed by SMAppService. It requires root and installer-approved component pins or an Apple-issued team signature. Use WakeLeaseDaemon --simulate for uninstalled development.")
     exit(0)
 }
 guard arguments.isEmpty, getuid() == 0, let requirement = ComponentTrust.requirement(role: .daemon), let maintenanceRequirement = ComponentTrust.requirement(role: .app) else {

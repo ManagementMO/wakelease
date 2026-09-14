@@ -84,7 +84,9 @@ public enum LeaseDiagnostics {
             let daemon = bundle.appendingPathComponent("Contents/Library/LaunchAgents/WakeLeaseDaemon")
             let present = FileManager.default.isExecutableFile(atPath: helper.path) && FileManager.default.isExecutableFile(atPath: daemon.path)
             checks.append(DoctorCheck("bundle", present ? .success : .failure, present ? "Bundled daemon and helper executables are present." : "The bundle is incomplete; rebuild or reinstall it."))
-            checks.append(DoctorCheck("signature", ComponentTrust.currentTeam == nil ? .warning : .success, ComponentTrust.currentTeam == nil ? "This CLI has no verified Apple-issued team. Development builds cannot operate the privileged helper." : "CLI has an Apple-anchored team signature; the daemon additionally pins the helper's role and team."))
+            let approved = ComponentTrust.hasRuntimeIdentity
+            let identity = ComponentTrust.currentTeam != nil ? "CLI has an Apple-anchored team signature; peers must match their exact roles and team." : "CLI matches the administrator-installed code pins; peers must match the approved component hashes and roles."
+            checks.append(DoctorCheck("signature", approved ? .success : .warning, approved ? identity : "This CLI has no verified installation identity. Install the matching WakeLease package; development and uninstalled builds do not establish helper trust."))
         } else {
             checks.append(DoctorCheck("bundle", .warning, "CLI is outside an application bundle. Use a packaged app for production service installation."))
         }
