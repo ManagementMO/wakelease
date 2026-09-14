@@ -21,14 +21,14 @@ def ephemeral_identity(directory, keychain):
     config.write_text("[req]\nprompt=no\ndistinguished_name=identity\nx509_extensions=extensions\n[identity]\nCN=WakeLease Disposable CI Publisher\n[extensions]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=codeSigning\n")
     key = directory / "identity.key"
     certificate = directory / "identity.pem"
-    encoded_key = directory / "identity.der"
+    archive = directory / "identity.p12"
+    subprocess.run(["/usr/bin/openssl", "version"], check=True, timeout=10)
     commands = [
-        ["openssl", "req", "-new", "-x509", "-newkey", "rsa:3072", "-nodes", "-days", "2", "-config", str(config), "-keyout", str(key), "-out", str(certificate)],
-        ["openssl", "pkcs8", "-topk8", "-nocrypt", "-in", str(key), "-outform", "DER", "-out", str(encoded_key)],
+        ["/usr/bin/openssl", "req", "-new", "-x509", "-newkey", "rsa:3072", "-nodes", "-days", "2", "-config", str(config), "-keyout", str(key), "-out", str(certificate)],
+        ["/usr/bin/openssl", "pkcs12", "-export", "-inkey", str(key), "-in", str(certificate), "-out", str(archive), "-passout", "env:WAKELEASE_EPHEMERAL_PASSWORD"],
         ["security", "create-keychain", "-p", password, str(keychain)],
         ["security", "unlock-keychain", "-p", password, str(keychain)],
-        ["security", "import", str(encoded_key), "-k", str(keychain), "-t", "priv", "-f", "pkcs8", "-x", "-T", "/usr/bin/codesign"],
-        ["security", "import", str(certificate), "-k", str(keychain)],
+        ["security", "import", str(archive), "-k", str(keychain), "-P", password, "-T", "/usr/bin/codesign"],
         ["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, str(keychain)],
     ]
     for command in commands:
@@ -39,8 +39,8 @@ def ephemeral_identity(directory, keychain):
         if result.returncode:
             raise RuntimeError("Disposable certificate setup failed in " + command[0] + ": " + result.stderr.replace(password, "[redacted]"))
     os.chmod(key, 0o600)
-    os.chmod(encoded_key, 0o600)
-    fingerprint = subprocess.check_output(["openssl", "x509", "-in", str(certificate), "-noout", "-fingerprint", "-sha1"], text=True).strip().split("=", 1)[1].replace(":", "")
+    os.chmod(archive, 0o600)
+    fingerprint = subprocess.check_output(["/usr/bin/openssl", "x509", "-in", str(certificate), "-noout", "-fingerprint", "-sha1"], text=True).strip().split("=", 1)[1].replace(":", "")
     return ["--sign", fingerprint, "--keychain", str(keychain), "--timestamp=none"]
 
 
