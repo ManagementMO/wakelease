@@ -51,6 +51,12 @@ jobs:
         run: |
           swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseRemovalProbe
           python3 Tests/root_removal_smoke.py
+      - name: Owned ad-hoc XPC identity and authorization boundaries
+        env:
+          WAKELEASE_SOURCE_TESTING: "1"
+        run: |
+          swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseXPCProbe
+          python3 Tests/xpc_smoke.py
       - name: Command and simulation daemon integration
         run: python3 Tests/cli_integration.py
       - name: Simulated idle footprint regression

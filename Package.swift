@@ -30,6 +30,7 @@ let package = Package(
         .testTarget(name: "AdrafinilSharedTests", dependencies: testDependencies, path: "AdrafinilShared/Tests/AdrafinilSharedTests"),
     ] + (sourceTesting ? [
         .executableTarget(name: "WakeLeaseRemovalProbe", dependencies: ["AdrafinilShared"], path: "Tests/RootRemovalProbe"),
+        .executableTarget(name: "WakeLeaseXPCProbe", dependencies: ["AdrafinilShared"], path: "Tests/XPCBoundaryProbe"),
     ] : []),
     swiftLanguageModes: [.v6],
 )

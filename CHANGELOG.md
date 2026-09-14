@@ -38,7 +38,7 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 
 - Automated tests and simulation exercise the lease, transport, installer, command and power-coordination boundaries without changing host sleep settings.
 - CI verifies full unsigned Xcode builds and actual Swift/CLI/host-fixture execution on Apple Silicon/macOS 26 and Intel/macOS 15, including root-owned temporary ticket permissions and universal development packaging.
-- Local debug and optimized release suites pass 553 Swift tests; 28 CLI cases and eight native preview cases also pass. Pi's real SDK covers eight offline success/failure/cancellation/retry/queue scenarios.
+- Local debug and optimized release suites pass 552 Swift tests plus five standalone XPC scenarios across three fresh explicitly ad-hoc-signed probe processes; 28 CLI cases and eight native preview cases also pass. Pi's real SDK covers eight offline success/failure/cancellation/retry/queue scenarios.
 - Native accessibility and keyboard checks exercise preview settings and custom recipes using a separate clipboard and existing permission only. Live anonymous NSXPC fixtures verify listener rejection before the delegate and client reply rejection without registering services.
 - The Xcode project retains compatible format 77 without relaxing deployment or signing settings. CI artifacts use a pinned Node 24 uploader and fail if expected outputs are absent.
 - Live Apple-issued signing, ServiceManagement approval/removal and physical MacBook sleep behavior remain separate release gates.

@@ -6,6 +6,7 @@
 WAKELEASE_SOURCE_TESTING=1 swift test --scratch-path .build/source-testing \
   --disable-xctest --disable-experimental-prebuilts
 python3 Tests/cli_integration.py
+python3 Tests/xpc_smoke.py
 python3 Tests/ui_smoke.py
 python3 Tests/package_smoke.py
 python3 Scripts/lint.py
@@ -45,7 +46,8 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 - Malformed/foreign hook configuration, receipt ownership, backups, byte-exact restoration and modified plugins.
 - Read-only doctor semantics and refusal to uninstall recovery mechanisms before confirmed cleanup.
 - OS Security.framework rejection of unrelated signed binaries, unsigned binaries, and valid ad-hoc binaries spoofing all three production role identifiers.
-- Live anonymous NSXPC round trips with the test process's own designated requirement, listener rejection before the delegate runs, and client rejection of an untrusted reply. These temporary same-process fixtures register no launch service and execute no power operation; they are not production-certificate acceptance tests.
+- `Tests/xpc_smoke.py` exercises live anonymous NSXPC round trips with an explicitly ad-hoc-signed copy of the standalone `WakeLeaseXPCProbe`, listener rejection before delegate admission for all three production roles, and client rejection of an untrusted reply. It repeats the five scenarios across three fresh processes, registers no launch service, and executes no power operation. SwiftPM loads unit-test bundles inside a toolchain helper whose signing varies by installation; do not use that helper as the identity fixture or modify its signature. The probe awaits callbacks without blocking its executor and explicitly marks XPC error callbacks `@Sendable`.
+- Once-only continuation completion from a background callback created on the main actor, plus concurrent reply/timeout/error completion races.
 - Explicit flock release while a duplicated descriptor remains alive, including repeated parallel-suite verification.
 - Actual generated hook/script execution and a real pinned Pi SDK lifecycle using a mock model, an isolated home and network denial.
 - Durable helper removal admission, owner/transaction cancellation, restart fencing, rollback failure visibility and same-user maintenance exclusion.
@@ -65,7 +67,7 @@ The idle check measures only its owned simulation daemon through `proc_pidinfo`,
 
 ## Evidence recorded so far
 
-The expanded local suite now passes **553 Swift tests in 65 suites** in debug and release configurations, **28 CLI cases**, **eight Pi SDK lifecycle scenarios**, and **three native UI test methods** covering eight rendered previews plus accessibility-tree and ten interaction checks. The packaged-preview argument guards and repository/lint checks also pass.
+The expanded local suite now passes **552 Swift tests in 65 suites** in debug and release configurations, **five standalone XPC scenarios repeated across three fresh processes**, **28 CLI cases**, **eight Pi SDK lifecycle scenarios**, and **three native UI test methods** covering eight rendered previews plus accessibility-tree and ten interaction checks. XPC transport checks moved out of the SwiftPM helper into the explicitly signed probe; two once-only callback unit tests were added. The packaged-preview argument guards and repository/lint checks also pass.
 
 The inherited baseline was **416 tests in 41 suites**. The earlier published CI checkpoint covered **550 Swift tests in 64 suites**, 28 CLI cases and packaging. All five jobs for `6303ec6` passed in [GitHub Actions run 34809565795](https://github.com/ManagementMO/wakelease/actions/runs/34809565795) on September 14, 2026; consult the current commit's CI run for subsequent additions:
 
