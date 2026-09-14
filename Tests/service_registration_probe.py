@@ -21,13 +21,14 @@ def ephemeral_identity(directory, keychain):
     config.write_text("[req]\nprompt=no\ndistinguished_name=identity\nx509_extensions=extensions\n[identity]\nCN=WakeLease Disposable CI Publisher\n[extensions]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=codeSigning\n")
     key = directory / "identity.key"
     certificate = directory / "identity.pem"
-    archive = directory / "identity.p12"
+    encoded_key = directory / "identity.der"
     commands = [
         ["openssl", "req", "-new", "-x509", "-newkey", "rsa:3072", "-nodes", "-days", "2", "-config", str(config), "-keyout", str(key), "-out", str(certificate)],
-        ["openssl", "pkcs12", "-export", "-inkey", str(key), "-in", str(certificate), "-out", str(archive), "-passout", "env:WAKELEASE_EPHEMERAL_PASSWORD"],
+        ["openssl", "pkcs8", "-topk8", "-nocrypt", "-in", str(key), "-outform", "DER", "-out", str(encoded_key)],
         ["security", "create-keychain", "-p", password, str(keychain)],
         ["security", "unlock-keychain", "-p", password, str(keychain)],
-        ["security", "import", str(archive), "-k", str(keychain), "-P", password, "-T", "/usr/bin/codesign"],
+        ["security", "import", str(encoded_key), "-k", str(keychain), "-t", "priv", "-f", "pkcs8", "-x", "-T", "/usr/bin/codesign"],
+        ["security", "import", str(certificate), "-k", str(keychain)],
         ["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, str(keychain)],
     ]
     for command in commands:
@@ -38,13 +39,13 @@ def ephemeral_identity(directory, keychain):
         if result.returncode:
             raise RuntimeError("Disposable certificate setup failed in " + command[0] + ": " + result.stderr.replace(password, "[redacted]"))
     os.chmod(key, 0o600)
-    os.chmod(archive, 0o600)
+    os.chmod(encoded_key, 0o600)
     fingerprint = subprocess.check_output(["openssl", "x509", "-in", str(certificate), "-noout", "-fingerprint", "-sha1"], text=True).strip().split("=", 1)[1].replace(":", "")
     return ["--sign", fingerprint, "--keychain", str(keychain), "--timestamp=none"]
 
 
-def probe_launches(directory, temporary, app_binary, helper_binary, signing):
-    reports = []
+def build_apps(directory, app_binary, helper_binary, signing):
+    apps = []
     for launch in ["direct", "launch-services"]:
         identifier = "org.wakelease.registration-probe." + uuid.uuid4().hex
         app = directory / (launch + ".app")
@@ -65,6 +66,14 @@ def probe_launches(directory, temporary, app_binary, helper_binary, signing):
                 "CFBundlePackageType": "APPL", "LSUIElement": True, "NSPrincipalClass": "NSApplication", "LSMinimumSystemVersion": "13.0"}
         (contents / "Info.plist").write_bytes(plistlib.dumps(info))
         subprocess.run(["codesign", "--force", *signing, str(app)], check=True, timeout=15)
+        subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True, timeout=15)
+        apps.append((launch, app, executable))
+    return apps
+
+
+def probe_launches(directory, temporary, apps):
+    reports = []
+    for launch, app, executable in apps:
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True, timeout=15)
         result = directory / (launch + ".json")
         cleanup = directory / (launch + "-cleanup.json")
@@ -96,6 +105,8 @@ def main():
     signature = os.environ.get("WAKELEASE_PROBE_SIGNATURE", "adhoc")
     if signature not in ["adhoc", "self-issued"]:
         raise SystemExit("Unknown probe signature type")
+    if signature == "self-issued" and os.environ.get("WAKELEASE_CERTIFICATE_TRUST_PROBE") != "approved-disposable-runner":
+        raise SystemExit("Temporary certificate trust requires separate CI approval")
     temporary = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
     destination = temporary / "wakelease-registration-results.json"
     with tempfile.TemporaryDirectory(prefix="wakelease-registration-", dir=temporary) as directory:
@@ -106,13 +117,28 @@ def main():
             subprocess.run(["xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", str(ROOT / "Tests/ServiceRegistrationProbe" / source),
                             "-o", str(output)], check=True, timeout=90)
         keychain = directory / "disposable.keychain-db"
+        certificate = directory / "identity.pem"
+        trusted = False
         try:
             signing = ephemeral_identity(directory, keychain) if signature == "self-issued" else ["--sign", "-"]
-            reports = probe_launches(directory, temporary, app_binary, helper_binary, signing)
-            destination.write_text(json.dumps({"signature": signature, "reports": reports}, indent=2) + "\n")
+            if signature == "self-issued":
+                trusted = True
+                subprocess.run(["sudo", "-n", "security", "add-trusted-cert", "-d", "-r", "trustRoot", "-p", "codeSign", "-a", "/usr/bin/codesign",
+                                "-k", str(keychain), str(certificate)], check=True, capture_output=True, timeout=30)
+                subprocess.run(["security", "find-identity", "-p", "codesigning", str(keychain)], check=True, timeout=15)
+            apps = build_apps(directory, app_binary, helper_binary, signing)
+            if trusted:
+                subprocess.run(["sudo", "-n", "security", "remove-trusted-cert", "-d", str(certificate)], check=True, capture_output=True, timeout=30)
+                trusted = False
+            reports = probe_launches(directory, temporary, apps)
+            destination.write_text(json.dumps({"signature": signature, "trustRemovedBeforeExecution": True, "reports": reports}, indent=2) + "\n")
         finally:
-            if keychain.exists():
-                subprocess.run(["security", "delete-keychain", str(keychain)], check=True, capture_output=True, timeout=15)
+            try:
+                if trusted:
+                    subprocess.run(["sudo", "-n", "security", "remove-trusted-cert", "-d", str(certificate)], check=True, capture_output=True, timeout=30)
+            finally:
+                if keychain.exists():
+                    subprocess.run(["security", "delete-keychain", str(keychain)], check=True, capture_output=True, timeout=15)
 
 
 if __name__ == "__main__":
