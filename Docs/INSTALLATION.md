@@ -51,16 +51,18 @@ wakelease uninstall --yes
 The ordered procedure is:
 
 1. Require the owning packaged app and known registration context.
-2. Pause admission and release this user's leases if services are enabled.
-3. Require reported cleanup, no other user's helper claim, and a read-back of `SleepDisabled 0`.
+2. Ask the helper's separate, app-authenticated maintenance endpoint for a removal reservation. Any other user's live claim prevents it; the initiating user's claim is retired and new machine-wide wake claims are refused.
+3. Persist the reservation before acknowledging it, pause this user's broker, require reported cleanup, and read back `SleepDisabled 0`.
 4. Remove only recorded integration content. A modified plugin or foreign replacement is a conflict, not permission to delete it.
 5. Unregister the user daemon, root helper and main-app login item.
-6. Remove the exact receipt-owned CLI symlink and operational state/socket.
+6. Remove the exact receipt-owned CLI symlink, the reservation ticket after helper unregistration, and operational state/socket.
 7. Optionally remove known preferences, logs and backups (`--purge`) and move this app to Trash (`--remove-app`). Unknown files are retained.
 
-Without `--yes`, a terminal confirmation is required. Without `--purge`, preferences/logs/backups remain private for review. The app can remain on disk for later reinstall unless you choose Trash. Empty parent directories may remain; unrelated user files and shell configuration are not removed.
+Without `--yes`, a terminal confirmation is required. Without `--purge`, preferences/logs/backups remain private for review. The app can remain on disk for later reinstall unless you choose Trash. Empty parent directories and a zero-byte private `maintenance.lock` may remain; unrelated user files and shell configuration are not removed. Keeping that lock inode stable prevents overlapping same-user install/removal processes from cancelling each other's transaction. It contains no settings or wake state. For byte-for-byte removal, quit every WakeLease UI/CLI instance after service removal and remove the otherwise empty support folder in Finder.
 
-Removal changes a machine-global helper registration. Coordinate with every logged-in user: another user must not start new wake-requiring work between the cleanup check and service removal. The read-back is not a global transaction against future claims; live multi-user removal remains a release gate.
+Removal changes a machine-global helper registration. The helper-owned reservation closes the former check-then-remove gap: a new lease cannot acquire applied protection while removal is reserved, including after a helper restart. Existing work from another user causes reservation to fail rather than being interrupted. A failed uninstall cancels only its own transaction; an unconfirmed cancellation remains visible and requires **Enable WakeLease Services** from the owning app to restore admission. The user's broker stays paused until explicitly resumed.
+
+The durable ticket is a root-owned file under `/Library/Application Support/org.wakelease.helper/`. The initiating UID receives only read/delete rights to that exact ticket, not write rights or permission to create directory entries. After services are unregistered the app removes its ticket; an empty root-owned parent directory can remain. Other users cannot cancel the transaction or edit its contents. Do not manually delete an active ticket while the helper is registered. ServiceManagement's real multi-user approval/removal behavior still requires signed live verification; independent administrator changes to registrations and competing power utilities are outside this transaction.
 
 A failure stops the process and reports it. Earlier safe steps may already have completed; rerun after resolving the stated conflict. If power cleanup is unknown, recovery services are deliberately retained. Review [RECOVERY.md](RECOVERY.md)—do not force-delete them to make uninstall look successful.
 

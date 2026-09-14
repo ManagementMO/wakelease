@@ -28,6 +28,8 @@ let package = Package(
         .executableTarget(name: "WakeLeaseDaemon", dependencies: ["AdrafinilShared"], path: "AdrafinilDaemon", exclude: ["Info.plist", "LaunchAgent.plist"]),
         .executableTarget(name: "WakeLeaseHelper", dependencies: ["AdrafinilShared"], path: "AdrafinilHelper", exclude: ["Info.plist", "LaunchDaemon.plist"]),
         .testTarget(name: "AdrafinilSharedTests", dependencies: testDependencies, path: "AdrafinilShared/Tests/AdrafinilSharedTests"),
-    ],
+    ] + (sourceTesting ? [
+        .executableTarget(name: "WakeLeaseRemovalProbe", dependencies: ["AdrafinilShared"], path: "Tests/RootRemovalProbe"),
+    ] : []),
     swiftLanguageModes: [.v6],
 )

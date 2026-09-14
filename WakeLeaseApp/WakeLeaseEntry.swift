@@ -25,12 +25,14 @@ enum WakeLeaseEntry {
             }
             Task { @MainActor in
                 do {
-                    try await UninstallCoordinator.run(environment: AppUninstallEnvironment(), purge: arguments.contains("--purge"))
+                    let environment = AppUninstallEnvironment()
+                    try await UninstallCoordinator.run(environment: environment, purge: arguments.contains("--purge"))
                     print("WakeLease services, recorded integrations, and owned CLI link removed. Sleep disabling was confirmed OFF before teardown.")
                     if arguments.contains("--remove-app") {
                         try FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil)
                         print("Application moved to Trash.")
                     } else { print("You may now move WakeLease.app to Trash.") }
+                    withExtendedLifetime(environment) {}
                     exit(0)
                 } catch {
                     FileHandle.standardError.write(Data(("Uninstall stopped safely: " + error.localizedDescription + "\n").utf8))

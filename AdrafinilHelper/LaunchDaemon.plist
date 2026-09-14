@@ -12,6 +12,8 @@
     <dict>
         <key>org.wakelease.helper</key>
         <true/>
+        <key>org.wakelease.helper.maintenance</key>
+        <true/>
     </dict>
 
     <key>AssociatedBundleIdentifiers</key>

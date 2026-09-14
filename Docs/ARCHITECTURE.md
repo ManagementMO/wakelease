@@ -30,7 +30,7 @@ WakeLease.app — native menu bar and settings
 
 The app may quit while work continues. The CLI does not register or escalate a helper implicitly. Production daemon startup requires a team signature, a non-root user, and the standard state directory. Unsigned development is explicitly simulation-only.
 
-The helper accepts an exact daemon signing role, an Apple anchor, and the matching team. The daemon pins the helper's role/team, verifies a root peer, and checks the helper version before setting demand. The helper accepts no executable, shell fragment, path, environment, or arbitrary `pmset` argument from an IPC caller.
+The helper's wake-control endpoint accepts an exact daemon signing role, an Apple anchor, and the matching team. The daemon pins the helper's role/team, verifies a root peer, and checks the helper version before setting demand. A separate maintenance Mach service accepts only the exact matching app role for removal reservation/cancellation/status/version; the ordinary local lease API cannot reserve global removal. Its UID comes from XPC, its transaction identifier must be a UUID, and its durable state path is fixed by the helper. Neither endpoint accepts an executable, shell fragment, caller-selected path, environment, or arbitrary `pmset` argument.
 
 ## Generic lease core
 

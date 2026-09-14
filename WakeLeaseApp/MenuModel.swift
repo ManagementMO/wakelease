@@ -169,9 +169,11 @@ final class MenuModel {
         guard !preview, !busy else { return }
         problem = nil
         busy = true
-        defer { busy = false }
-        do { information = try ServiceRegistry.install(preferences: preferences); refresh() }
-        catch { problem = error.localizedDescription }
+        Task { @MainActor in
+            defer { busy = false; refresh() }
+            do { information = try await ServiceRegistry.install(preferences: preferences) }
+            catch { problem = error.localizedDescription }
+        }
     }
 
     func uninstall(purge: Bool, removeApp: Bool) {
@@ -182,8 +184,10 @@ final class MenuModel {
         saveTask = nil
         Task { @MainActor in
             do {
-                try await UninstallCoordinator.run(environment: AppUninstallEnvironment(), purge: purge)
+                let environment = AppUninstallEnvironment()
+                try await UninstallCoordinator.run(environment: environment, purge: purge)
                 if removeApp { try FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil) }
+                withExtendedLifetime(environment) {}
                 NSApp.terminate(nil)
             } catch { problem = error.localizedDescription; busy = false }
         }

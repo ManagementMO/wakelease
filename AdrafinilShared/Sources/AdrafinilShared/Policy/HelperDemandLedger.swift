@@ -10,10 +10,12 @@ public struct HelperDemandLedger: Sendable {
     private var claims: [UInt32: Claim] = [:]
     private let heartbeatWindow: TimeInterval
     private let disconnectGrace: TimeInterval
+    public private(set) var removal: HelperRemovalReservation?
 
-    public init(heartbeatWindow: TimeInterval = 90, disconnectGrace: TimeInterval = 60) {
+    public init(heartbeatWindow: TimeInterval = 90, disconnectGrace: TimeInterval = 60, removal: HelperRemovalReservation? = nil) {
         self.heartbeatWindow = heartbeatWindow
         self.disconnectGrace = disconnectGrace
+        self.removal = removal
     }
 
     public var shouldBlock: Bool {
@@ -33,6 +35,7 @@ public struct HelperDemandLedger: Sendable {
 
     public mutating func set(uid: UInt32, token: UUID, blocked: Bool, at time: TimeInterval) throws {
         guard var claim = claims[uid], claim.token == token, claim.connected else { throw LeaseFailure.ownerUnavailable }
+        guard !blocked || removal == nil else { throw HelperRemovalFailure.reserved }
         claim.blocked = blocked
         claim.deadline = blocked ? time + heartbeatWindow : nil
         claims[uid] = claim
@@ -56,6 +59,36 @@ public struct HelperDemandLedger: Sendable {
                 claims[uid] = claim
             }
         }
+    }
+
+    public mutating func reserveRemoval(uid: UInt32, token: UUID, id: UUID) throws {
+        guard let claim = claims[uid], claim.token == token, claim.connected else { throw LeaseFailure.ownerUnavailable }
+        try reserveRemoval(uid: uid, id: id)
+    }
+
+    public mutating func reserveRemoval(uid: UInt32, id: UUID) throws {
+        guard uid > 0 else { throw HelperRemovalFailure.invalidReservation }
+        if let removal {
+            guard removal.uid == uid, removal.id == id else { throw HelperRemovalFailure.reserved }
+            return
+        }
+        guard !claims.contains(where: { $0.key != uid && $0.value.blocked }) else { throw HelperRemovalFailure.activeWork }
+        if var claim = claims[uid] {
+            claim.blocked = false
+            claim.deadline = nil
+            claims[uid] = claim
+        }
+        removal = HelperRemovalReservation(id: id, uid: uid)
+    }
+
+    public mutating func cancelRemoval(uid: UInt32, token: UUID, id: UUID) throws {
+        guard let claim = claims[uid], claim.token == token, claim.connected else { throw LeaseFailure.ownerUnavailable }
+        try cancelRemoval(uid: uid, id: id)
+    }
+
+    public mutating func cancelRemoval(uid: UInt32, id: UUID) throws {
+        guard let removal, removal.uid == uid, removal.id == id else { throw HelperRemovalFailure.invalidReservation }
+        self.removal = nil
     }
 
     public mutating func clear() {

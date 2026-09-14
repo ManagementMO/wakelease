@@ -25,6 +25,8 @@ Production authorization must fail closed. Unsigned development must not weaken 
 - Packaging: `python3 Tests/package_smoke.py` verifies a disposable ad-hoc bundle, version commands, preview rendering and production-mode refusal. `WAKELEASE_HEADLESS=1` skips only its GUI render when no logged-in desktop exists.
 - `python3 Scripts/lint.py` uses checksum-pinned SwiftFormat 0.63.0 / SwiftLint 0.65.1. SourceKitten excludes Command Line Tools discovery by default; the script supplies `XCODE_DEFAULT_TOOLCHAIN_OVERRIDE` only when that toolchain's framework exists. No global developer-directory setting or lint rule is changed.
 - `python3 Tests/release_tools.py` and `python3 Scripts/check-repository.py` cover release-input validation, local doc links, identities, legal notice and asset geometry.
+- `Tests/root_removal_smoke.py` is opt-in on disposable CI runners only (`CI=true`, `WAKELEASE_ROOT_FIXTURE=1`). It uses `WakeLeaseRemovalProbe` solely to create/delete a root-owned temporary ticket and prove unprivileged read/delete but not write/create permissions. Never enable it against real helper state or as a local privileged power test.
+- Same-user install/removal share a stable `maintenance.lock`; do not unlink a live lock inode. Global removal is separately fenced by the helper and survives helper restart.
 - Inspect `git diff --check` and run relevant tests before each commit.
 
 Keep the actor registry as the source of truth. Count effective leases, not process names or UI state. Check stale generations after every suspension point on the sleep-release path. A failed unblock must remain observable and retryable.

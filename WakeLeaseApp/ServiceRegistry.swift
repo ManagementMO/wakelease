@@ -1,4 +1,5 @@
 import AdrafinilShared
+import Darwin
 import Foundation
 import Security
 import ServiceManagement
@@ -31,8 +32,10 @@ enum ServiceRegistry {
         ]
     }
 
-    static func install(preferences: WakeLeasePreferences) throws -> String {
+    static func install(preferences: WakeLeasePreferences) async throws -> String {
         guard canInstall else { throw Failure(message: "Enable services from the packaged, team-signed app. Unsigned development uses the simulation daemon.") }
+        let lock = try SecureDirectory(url: WakeLeasePaths.standardDirectory, create: true).lock(name: "maintenance.lock")
+        defer { Darwin.close(lock) }
         let bundle = Bundle.main.bundleURL
         try verify(bundle, role: .app)
         try verify(bundle.appendingPathComponent("Contents/Library/LaunchAgents/WakeLeaseDaemon"), role: .daemon)
@@ -47,7 +50,9 @@ enum ServiceRegistry {
         if helper.status == .requiresApproval || daemon.status == .requiresApproval {
             return "Approve WakeLease in System Settings → General → Login Items & Extensions, then refresh."
         }
-        return "Services registered. Confirm the daemon and helper status before closing the lid."
+        let maintenance = HelperMaintenanceClient()
+        if let pending = try await maintenance.current() { try await maintenance.cancel(pending.id) }
+        return "Services registered; any removal reservation owned by this user was restored. Confirm daemon/helper status and resume explicitly if paused."
     }
 
     static func setLogin(_ enabled: Bool) async throws {

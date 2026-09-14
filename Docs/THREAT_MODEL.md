@@ -22,7 +22,7 @@ Threat actors include other local users, arbitrary same-user processes, untruste
 
 | Threat | Control | Required verification |
 | --- | --- | --- |
-| Helper caller spoofing | Apple-anchored signing requirement, exact daemon identifier, same signing team; reject unsigned helper execution | Real signed positive/negative XPC tests |
+| Helper caller spoofing | Apple-anchored signing requirements, exact daemon role for wake control and exact app role for separate maintenance, same signing team, kernel XPC UID; reject unsigned helper execution | Real signed positive/negative XPC tests |
 | PID spoofing/reuse | Obtain socket UID/PID from kernel; validate owner UID and process start identity, not just `kill(pid, 0)` | Fake reuse tests and real process-exit integration tests |
 | Socket replacement | Private owned directory, no symlink following, singleton lock, socket mode 0600; verify peer credentials on both ends | Foreign file, symlink, second-daemon tests |
 | Framing/flooding | Bounded frames, absolute I/O deadlines, limited concurrent clients, structured protocol errors, SIGPIPE handling | Partial/malformed/oversized/disappearing client tests |
@@ -52,6 +52,7 @@ External-display clamshell use is a distinct situation. On the final lease, rest
 6. **Lost cutout state / stale readings:** latches persist; the production provider uses fresh optional SMC readings plus public thermal state rather than presenting cached temperatures as current. Provider failure cannot clear a temperature-dependent latch.
 7. **Leaked display user-activity assertion:** final release clears both assertion slots, retains failed releases for retry, and is covered by `SafetySchedulingTests`.
 8. **Daemon remains connected but wedged:** helper claims expire after 90 seconds without a set request, independently of a 60-second disconnect grace. Per-user aggregation preserves another user's live claim and rejects callbacks from replaced connections.
+9. **Acquire during uninstall:** removal now reserves admission on the helper's serial executor, refuses another user's existing claim, retires only the initiator's claim, persists a root-owned ticket before acknowledgment, and rejects new claims even after helper restart. Cancellation requires the same UID and transaction. The exact ticket grants its initiating UID read/delete but not write/create rights, allowing cleanup after service removal without a generic privileged filesystem API. Failed rollback remains visible; unit and disposable filesystem fixtures exercise the boundary. Signed ServiceManagement execution remains a release gate.
 
 Safety maintenance uses earliest-deadline scheduling: incoming traffic cannot postpone an already armed sweep or failed-cleanup retry. Root subprocesses inherit launchd's process group; a child that cannot be reaped causes the helper to exit for supervisor cleanup rather than issuing a competing newer setting.
 

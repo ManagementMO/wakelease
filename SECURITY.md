@@ -4,7 +4,7 @@ WakeLease includes a root LaunchDaemon that changes machine-global sleep behavio
 
 ## Reporting
 
-A WakeLease public repository and private security contact have **not yet been designated**. A public release is blocked until the maintainer enables private vulnerability reporting or publishes a monitored private contact.
+Report vulnerabilities using [GitHub private vulnerability reporting](https://github.com/ManagementMO/wakelease/security/advisories/new). It is enabled for the independent WakeLease repository. Do not use public issues for exploit details or private configuration.
 
 For an engineering build, contact its distributor through the private channel used to obtain it. Do not publish exploit details, user configuration, prompts, transcripts, tokens, or private logs in an issue. Do not send WakeLease-only reports to Adrafinil's maintainer as though the projects were the same product. If a minimal reproducer also affects unmodified upstream, coordinate an appropriately scoped upstream report.
 
@@ -12,7 +12,7 @@ Include the build commit/version, macOS version, architecture, sanitized doctor 
 
 ## Important boundaries
 
-- Only the exact Apple-anchored, team-matching daemon role may call the helper. There is no unsigned production fallback.
+- Only the exact Apple-anchored, team-matching daemon role may call the helper's wake-control endpoint. A separate maintenance endpoint accepts only the matching app role and exposes reservation/cancellation/status/version, never arbitrary commands or wake acquisition. Both bind the caller UID from XPC. There is no unsigned production fallback.
 - The helper accepts fixed mechanical operations, not commands, paths, environment variables, or arbitrary privileged arguments.
 - The user-only socket checks kernel peer credentials. Process ownership includes UID and birth identity, not just a reusable PID.
 - Finite lifetimes, waiting semantics, stale-event barriers, capacity bounds, and cutout latches limit abandoned or replayed work.

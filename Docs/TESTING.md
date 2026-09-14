@@ -39,6 +39,8 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 - Literal command arguments, stdin, exit codes, signals, controlling terminals and watcher cancellation.
 - Malformed/foreign hook configuration, receipt ownership, backups, byte-exact restoration and modified plugins.
 - Read-only doctor semantics and refusal to uninstall recovery mechanisms before confirmed cleanup.
+- Durable helper removal admission, owner/transaction cancellation, restart fencing, rollback failure visibility and same-user maintenance exclusion.
+- In explicitly opted-in disposable CI only, `python3 Tests/root_removal_smoke.py` checks root-owned ticket permissions with a temporary fixture. It does not register services or call power APIs.
 
 ## Evidence recorded so far
 
@@ -50,7 +52,7 @@ Observed concurrent CLI latency in simulation varied with load: examples ranged 
 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
-| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Command Line Tools cannot perform it locally; CI remains required |
+| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed for `8e786db` in [GitHub Actions](https://github.com/ManagementMO/wakelease/actions/runs/34790387538); subsequent changes require a fresh CI run |
 | Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Pure requirements and unsigned-start rejection covered; live signed peers unverified |
 | Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
 | In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |

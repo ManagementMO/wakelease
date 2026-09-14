@@ -1,5 +1,6 @@
 import AdrafinilShared
 import AppKit
+import Darwin
 import Foundation
 import ServiceManagement
 
@@ -7,13 +8,25 @@ import ServiceManagement
 final class AppUninstallEnvironment: UninstallEnvironment {
     private let directory = WakeLeasePaths.standardDirectory
     private var confirmed = false
+    private let maintenance = HelperMaintenanceClient()
+    private var reservation: HelperRemovalReservation?
+    private var maintenanceLock: Int32?
+
+    isolated deinit { if let maintenanceLock { Darwin.close(maintenanceLock) } }
 
     func pauseAndVerifySleepAllowed() async throws {
         guard ServiceRegistry.isPackaged else { throw ServiceRegistry.Failure(message: "Uninstall services from the packaged app that owns their registration.") }
+        guard maintenanceLock == nil else { throw LocalIOError.alreadyRunning }
+        maintenanceLock = try SecureDirectory(url: directory, create: true).lock(name: "maintenance.lock")
         let helper = SMAppService.daemon(plistName: "LaunchDaemon.plist")
         let daemon = SMAppService.agent(plistName: "LaunchAgent.plist")
         guard helper.status != .notFound, daemon.status != .notFound else { throw ServiceRegistry.Failure(message: "The bundle is incomplete. Restore a matching app before removing its registered services.") }
         if helper.status == .enabled || daemon.status == .enabled {
+            let pending = try await maintenance.current() ?? HelperRemovalReservation(id: UUID(), uid: getuid())
+            reservation = pending
+            try await maintenance.reserve(pending.id)
+        }
+        if daemon.status == .enabled {
             let response = try await LeaseSocketClient(directory: directory, timeout: 20).sendAsync(LeaseRequest(operation: "pause"))
             guard response.ok, let status = response.status, status.mode == "system", status.snapshot.paused,
                   !status.snapshot.demand.system, status.power.applied?.system == false,
@@ -47,7 +60,24 @@ final class AppUninstallEnvironment: UninstallEnvironment {
         try CLILinkManager(stateDirectory: directory).uninstall()
     }
 
+    func cancelPendingRemoval() async throws {
+        guard let reservation else { return }
+        if SMAppService.daemon(plistName: "LaunchDaemon.plist").status == .notRegistered {
+            try HelperRemovalStore().remove(reservation)
+        } else if let current = try await maintenance.current() {
+            guard current == reservation else { throw HelperRemovalFailure.invalidReservation }
+            try await maintenance.cancel(reservation.id)
+        }
+        self.reservation = nil
+        confirmed = false
+    }
+
     func cleanOwnedState(purge: Bool) async throws {
+        guard confirmed, SMAppService.daemon(plistName: "LaunchDaemon.plist").status == .notRegistered else { throw HelperRemovalFailure.reserved }
+        if let reservation {
+            try HelperRemovalStore().remove(reservation)
+            self.reservation = nil
+        }
         let state: SecureDirectory
         do { state = try SecureDirectory(url: directory, create: false) }
         catch LocalIOError.system(ENOENT) { return }

@@ -68,6 +68,12 @@ public enum LeaseDiagnostics {
             checks.append(DoctorCheck("integration." + integration.id, level, health.state + ": " + health.note))
         }
         if status?.mode != "simulation" {
+            do {
+                let pending = try HelperRemovalStore().load()
+                checks.append(DoctorCheck("helperRemoval", pending == nil ? .success : .failure, pending == nil ? "No persisted helper removal reservation." : "Helper removal is pending. Finish uninstall or enable services from the owning app to restore admission; resume the broker explicitly afterward."))
+            } catch {
+                checks.append(DoctorCheck("helperRemoval", .failure, "Helper removal state is unreadable or unsafe, or belongs to another user. Ask the owning user to finish/restore it; do not delete a live reservation."))
+            }
             for (id, service) in [("launchAgent", "gui/\(getuid())/" + WakeLeaseIdentity.daemonBundleID), ("launchDaemon", "system/" + WakeLeaseIdentity.helperBundleID)] {
                 let result = try? BoundedProcess.run(arguments: ["/bin/launchctl", "print", service], timeout: 2)
                 checks.append(DoctorCheck(id, result?.status == 0 ? .success : .warning, result?.status == 0 ? "Service is registered with launchd." : "Service was not visible to launchctl. Enable it from the packaged app; do not reset system-wide launch records."))

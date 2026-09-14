@@ -11,7 +11,7 @@ if arguments == ["--help"] {
     print("WakeLeaseHelper is managed by SMAppService. It requires root and an Apple-issued team signature. Use WakeLeaseDaemon --simulate for unsigned development.")
     exit(0)
 }
-guard arguments.isEmpty, getuid() == 0, let requirement = ComponentTrust.requirement(role: .daemon) else {
+guard arguments.isEmpty, getuid() == 0, let requirement = ComponentTrust.requirement(role: .daemon), let maintenanceRequirement = ComponentTrust.requirement(role: .app) else {
     FileHandle.standardError.write(Data("WakeLeaseHelper refuses unsigned or unprivileged execution. No power settings were changed.\n".utf8))
     exit(78)
 }
@@ -23,6 +23,11 @@ listener.setConnectionCodeSigningRequirement(requirement)
 let delegate = HelperListenerDelegate()
 listener.delegate = delegate
 listener.resume()
+let maintenanceListener = NSXPCListener(machServiceName: WakeLeaseIdentity.helperMaintenanceMachServiceName)
+let maintenanceDelegate = HelperMaintenanceListener(controller: delegate.controller)
+maintenanceListener.setConnectionCodeSigningRequirement(maintenanceRequirement)
+maintenanceListener.delegate = maintenanceDelegate
+maintenanceListener.resume()
 
 // SIGTERM is how launchd ends this process at machine shutdown (and on unregister). The kernel
 // reclaims the idle IOPMAssertion with the process, but `disablesleep` is a persistent

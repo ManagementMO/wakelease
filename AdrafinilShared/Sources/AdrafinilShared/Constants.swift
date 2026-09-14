@@ -11,6 +11,7 @@ public enum WakeLeaseIdentity {
 
     public static let daemonMachServiceName = daemonBundleID
     public static let helperMachServiceName = helperBundleID
+    public static let helperMaintenanceMachServiceName = helperBundleID + ".maintenance"
 
     public static let appSupportDirectoryName = name
     public static let cliSocketFilename = "cli.sock"

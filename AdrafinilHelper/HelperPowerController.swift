@@ -6,13 +6,17 @@ final class HelperPowerController: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.wakelease.helper.power")
     private let blocker: SleepBlocker
     private var ledger: HelperDemandLedger
+    private let removalStore: HelperRemovalStore
+    private var removalIssue: Error?
     private var timer: DispatchSourceTimer?
     private var nextTick = EarliestDeadline()
     private let log = Logger(subsystem: WakeLeaseIdentity.helperBundleID, category: "Recovery")
 
-    init(blocker: SleepBlocker, disconnectGrace: TimeInterval) {
+    init(blocker: SleepBlocker, disconnectGrace: TimeInterval, removalStore: HelperRemovalStore = HelperRemovalStore()) {
         self.blocker = blocker
-        ledger = HelperDemandLedger(disconnectGrace: disconnectGrace)
+        self.removalStore = removalStore
+        do { ledger = try HelperDemandLedger(disconnectGrace: disconnectGrace, removal: removalStore.load()) }
+        catch { ledger = HelperDemandLedger(disconnectGrace: disconnectGrace); removalIssue = error }
         queue.async { [self] in schedule() }
     }
 
@@ -33,18 +37,60 @@ final class HelperPowerController: @unchecked Sendable {
     func set(uid: UInt32, token: UUID, blocked: Bool, reply: @escaping @Sendable (Bool, NSError?) -> Void) {
         queue.async { [self] in
             do {
+                guard !blocked || removalIssue == nil else { throw HelperRemovalFailure.unsafeStorage }
                 ledger.expire(at: SystemLeaseClock().now().continuous)
                 try ledger.set(uid: uid, token: token, blocked: blocked, at: SystemLeaseClock().now().continuous)
                 try blocker.set(blocked: ledger.shouldBlock)
+                if removalIssue != nil { throw HelperRemovalFailure.unsafeStorage }
                 reply(blocked, nil)
             } catch { reply(blocker.isBlocked, error as NSError) }
             schedule()
         }
     }
 
+    func reserveRemoval(uid: UInt32, id: UUID, reply: @escaping @Sendable (Bool, NSError?) -> Void) {
+        queue.async { [self] in
+            do {
+                guard removalIssue == nil else { throw HelperRemovalFailure.unsafeStorage }
+                ledger.expire(at: SystemLeaseClock().now().continuous)
+                try ledger.reserveRemoval(uid: uid, id: id)
+                guard let reservation = ledger.removal else { throw HelperRemovalFailure.invalidReservation }
+                do { try removalStore.save(reservation) }
+                catch { removalIssue = error; throw error }
+                try blocker.set(blocked: false)
+                log.notice("helper_removal_reserved — uid=\(uid, privacy: .public)")
+                reply(true, nil)
+            } catch { reply(false, error as NSError) }
+            schedule()
+        }
+    }
+
+    func cancelRemoval(uid: UInt32, id: UUID, reply: @escaping @Sendable (Bool, NSError?) -> Void) {
+        queue.async { [self] in
+            do {
+                guard let reservation = ledger.removal else { throw HelperRemovalFailure.invalidReservation }
+                var next = ledger
+                try next.cancelRemoval(uid: uid, id: id)
+                try removalStore.remove(reservation)
+                ledger = next
+                removalIssue = nil
+                log.notice("helper_removal_cancelled — uid=\(uid, privacy: .public)")
+                reply(true, nil)
+            } catch { reply(false, error as NSError) }
+            schedule()
+        }
+    }
+
+    func currentRemoval(uid: UInt32, reply: @escaping @Sendable (String?, UInt32, NSError?) -> Void) {
+        queue.async { [self] in
+            let reservation = ledger.removal
+            reply(reservation?.uid == uid ? reservation?.id.uuidString : nil, reservation?.uid ?? 0, reservation == nil ? removalIssue.map { $0 as NSError } : nil)
+        }
+    }
+
     func ifIdle(_ action: @escaping @Sendable () -> Void) {
         queue.async { [self] in
-            guard !ledger.shouldBlock, !blocker.isBlocked, !blocker.needsReconciliation else { return }
+            guard ledger.removal == nil, removalIssue == nil, !ledger.shouldBlock, !blocker.isBlocked, !blocker.needsReconciliation else { return }
             action()
         }
     }
@@ -61,7 +107,8 @@ final class HelperPowerController: @unchecked Sendable {
 
     private func schedule() {
         let now = SystemLeaseClock().now().continuous
-        let desired = [ledger.nextDeadline, blocker.needsReconciliation ? now + 5 : nil].compactMap(\.self).min()
+        let needsRepair = blocker.needsReconciliation || blocker.isBlocked != ledger.shouldBlock
+        let desired = [ledger.nextDeadline, needsRepair ? now + 5 : nil].compactMap(\.self).min()
         guard nextTick.arm(desired) else { return }
         timer?.cancel()
         timer = nil
@@ -79,7 +126,7 @@ final class HelperPowerController: @unchecked Sendable {
         timer = nil
         let before = ledger.shouldBlock
         ledger.expire(at: SystemLeaseClock().now().continuous)
-        if before != ledger.shouldBlock || blocker.needsReconciliation || (!ledger.shouldBlock && blocker.isBlocked) {
+        if before != ledger.shouldBlock || blocker.needsReconciliation || blocker.isBlocked != ledger.shouldBlock {
             do {
                 try blocker.set(blocked: ledger.shouldBlock)
                 log.notice("sleep_block_reconciled — helper deadline/recovery")

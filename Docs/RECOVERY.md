@@ -21,6 +21,17 @@ These are operator instructions, not commands to run automatically. Normal tests
 
 Normal clear failures stay visible and retryable. The helper clears stale persistent state at startup and on termination. Do not unregister or delete the helper merely because the UI is unavailable; that can remove the recovery mechanism.
 
+## Interrupted removal
+
+`doctor` reports persisted helper removal separately from ordinary power state. A valid reservation intentionally denies new wake claims, including after helper restart; it never means `SleepDisabled` should stay enabled.
+
+1. Use the same user account and a coherent, correctly signed WakeLease app.
+2. Either retry uninstall, or choose **Enable WakeLease Services** to cancel that user's pending reservation and restore service availability.
+3. Resume the user broker explicitly if it remains paused. Confirm doctor/applied protection before relying on new work.
+4. If another account owns the reservation, ask that user to complete or restore it. Do not cancel another user's transaction.
+
+A malformed or inaccessible root ticket is not treated as an absent ticket. Preserve the error and get administrator assistance; do not delete live reservation files to silence doctor. During a successful uninstall, narrowly delegated read/delete permissions allow the initiating account to remove its root-owned ticket after helper unregistration. The parent directory is not writable by that account, and a stable zero-byte per-user maintenance lock can remain to prevent concurrent management races.
+
 ## Manual administrator recovery
 
 Use this only after confirming that you intend to cancel wake protection and no legitimate competing utility owns the global override. It may interrupt local work.

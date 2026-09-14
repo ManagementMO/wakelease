@@ -15,7 +15,7 @@ public enum LocalIOError: Error, LocalizedError {
         switch self {
         case .unsafePath: "Unsafe path or permissions. Use an owned directory without symlinks."
         case .unavailable: "The WakeLease daemon is not reachable."
-        case .alreadyRunning: "Another WakeLease daemon owns this state directory."
+        case .alreadyRunning: "Another WakeLease process owns the required state or maintenance lock."
         case .frame: "Invalid or oversized local protocol frame."
         case .timeout: "Local operation timed out; a mutation may already have applied. Check status before retrying."
         case .closed: "The local connection closed before the response was complete."
@@ -41,8 +41,10 @@ public enum WakeLeasePaths {
 public final class SecureDirectory: @unchecked Sendable {
     public let url: URL
     public let descriptor: Int32
+    public let ownerUID: UInt32
 
-    public init(url: URL, create: Bool, privateDirectory: Bool = true) throws {
+    public init(url: URL, create: Bool, privateDirectory: Bool = true, ownerUID: UInt32 = getuid()) throws {
+        guard !create || ownerUID == getuid() else { throw LocalIOError.unsafePath }
         var components = url.pathComponents.filter { $0 != "/" }
         guard url.path.hasPrefix("/"), !components.isEmpty, !components.contains(".."), !components.contains(".") else { throw LocalIOError.unsafePath }
         if let root = components.first, ["var", "tmp", "etc"].contains(root) {
@@ -64,16 +66,17 @@ public final class SecureDirectory: @unchecked Sendable {
                 Darwin.close(fd)
                 fd = next
                 var info = stat()
-                guard fstat(fd, &info) == 0, info.st_uid == 0 || info.st_uid == getuid(),
+                guard fstat(fd, &info) == 0, info.st_uid == 0 || info.st_uid == ownerUID,
                       info.st_mode & 0o022 == 0 || (info.st_uid == 0 && info.st_mode & 0o1000 != 0) else { throw LocalIOError.unsafePath }
             }
             var info = stat()
-            guard fstat(fd, &info) == 0, info.st_uid == getuid(), !privateDirectory || info.st_mode & 0o077 == 0 else { throw LocalIOError.unsafePath }
+            guard fstat(fd, &info) == 0, info.st_uid == ownerUID, !privateDirectory || info.st_mode & 0o077 == 0 else { throw LocalIOError.unsafePath }
         } catch {
             Darwin.close(fd)
             throw error
         }
         self.url = url
+        self.ownerUID = ownerUID
         descriptor = fd
     }
 
@@ -101,6 +104,7 @@ public final class SecureDirectory: @unchecked Sendable {
     }
 
     public func write(_ data: Data, name: String, permissions: UInt16 = 0o600) throws {
+        guard ownerUID == getuid() else { throw LocalIOError.unsafePath }
         try validateName(name)
         try validateExisting(name)
         let temporary = ".write-" + UUID().uuidString
@@ -183,6 +187,7 @@ public final class SecureDirectory: @unchecked Sendable {
     }
 
     public func lock(name: String) throws -> Int32 {
+        guard ownerUID == getuid() else { throw LocalIOError.unsafePath }
         try validateName(name)
         let fd = openat(descriptor, name, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw LocalIOError.unsafePath }
@@ -208,6 +213,6 @@ public final class SecureDirectory: @unchecked Sendable {
     }
 
     private func safeFile(_ info: stat) -> Bool {
-        info.st_mode & S_IFMT == S_IFREG && info.st_uid == getuid() && info.st_nlink == 1
+        info.st_mode & S_IFMT == S_IFREG && info.st_uid == ownerUID && info.st_nlink == 1
     }
 }

@@ -35,6 +35,13 @@ jobs:
         env:
           WAKELEASE_SOURCE_TESTING: "1"
         run: swift test --scratch-path .build/source-testing --disable-xctest --disable-experimental-prebuilts
+      - name: Root-owned removal ticket permissions in a disposable directory
+        env:
+          WAKELEASE_ROOT_FIXTURE: "1"
+          WAKELEASE_SOURCE_TESTING: "1"
+        run: |
+          swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseRemovalProbe
+          python3 Tests/root_removal_smoke.py
       - name: Command and simulation daemon integration
         run: python3 Tests/cli_integration.py
       - name: Disposable ad-hoc bundle and privileged-mode refusal
@@ -44,7 +51,7 @@ jobs:
       - name: Universal development package
         run: python3 Scripts/build-app.py --configuration release --sign - --arch arm64 --arch x86_64 --output .build/universal/WakeLease.app --zip
       - name: Strict C syntax
-        run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c
+        run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c AdrafinilShared/Sources/WakeLeaseProcess/RemovalPermissions.c
       - name: Release-tool argument safety
         run: python3 Tests/release_tools.py
       - name: Repository and documentation checks
