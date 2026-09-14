@@ -75,13 +75,14 @@ jobs:
         run: python3 Scripts/check-repository.py
       - name: Retain universal development archive
         if: matrix.runner == 'macos-26'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: WakeLease-universal-development-no-privilege
           path: |
             .build/universal/WakeLease.zip
             .build/universal/WakeLease.zip.sha256
           retention-days: 7
+          if-no-files-found: error
 
   build:
     name: Full unsigned Xcode build (${{ matrix.runner }})
@@ -107,8 +108,9 @@ jobs:
             -destination 'generic/platform=macOS' -derivedDataPath .build/xcode \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' build
       - name: Retain unsigned compile artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: WakeLease-unsigned-compile-only-${{ matrix.runner }}
           path: .build/xcode/Build/Products/Debug/WakeLease.app
           retention-days: 7
+          if-no-files-found: error
