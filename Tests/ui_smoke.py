@@ -11,12 +11,12 @@ class NativeUISmoke(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         executable = Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"
         with tempfile.TemporaryDirectory(prefix="wl-ui-") as directory:
-            for state, settings, appearance in [("active", False, "dark"), ("normal", False, "light"), ("waiting", False, "dark"), ("cutout", False, "light"), ("normal", True, "dark"), ("normal", True, "light")]:
-                with self.subTest(state=state, settings=settings, appearance=appearance):
-                    image = Path(directory) / (state + ("-settings" if settings else "") + "-" + appearance + ".png")
+            for state, surface, appearance in [("active", "menu", "dark"), ("normal", "menu", "light"), ("waiting", "menu", "dark"), ("cutout", "menu", "light"), ("normal", "settings", "dark"), ("normal", "settings", "light"), ("normal", "custom-integration", "light"), ("normal", "custom-integration", "dark")]:
+                with self.subTest(state=state, surface=surface, appearance=appearance):
+                    image = Path(directory) / (state + "-" + surface + "-" + appearance + ".png")
                     command = [str(executable), "--preview", state, "--snapshot", str(image), "--" + appearance]
-                    if settings:
-                        command.append("--settings")
+                    if surface != "menu":
+                        command.append("--" + surface)
                     result = subprocess.run(command, capture_output=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
                     data = image.read_bytes()

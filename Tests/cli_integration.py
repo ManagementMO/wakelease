@@ -94,6 +94,74 @@ class CLIIntegration(unittest.TestCase):
         return self.protocol(dict(operation="configure", bootID=stamp["status"]["snapshot"]["bootID"],
                                   issuedAt=lease["deadline"] - lease["ttlSeconds"], preferences=preferences))
 
+    def test_generated_custom_recipes_namespace_and_release_work(self):
+        recipes = []
+        work_id = "same work; $(literal)"
+        environment = dict(self.environment, JOB_KEY=work_id)
+        for source in ["custom-first", "custom-second"]:
+            result = self.cli_run("hooks", "generate", "--source", source, "--session-variable", "JOB_KEY", "--for", "2m", "--display", "--json")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            recipe = json.loads(result.stdout)
+            self.assertEqual(recipe["version"], 1)
+            self.assertEqual(recipe["ttlSeconds"], 120)
+            recipes.append(recipe)
+            start = recipe["steps"][0]["command"]
+            subprocess.run(["/bin/sh", "-c", start], env=environment, check=True, timeout=10)
+        snapshot = self.status()["snapshot"]
+        self.assertEqual(snapshot["effectiveCount"], 2)
+        self.assertTrue(snapshot["demand"]["display"])
+        self.assertEqual({item["key"] for item in snapshot["leases"]}, {source + ":" + work_id for source in ["custom-first", "custom-second"]})
+        for count, recipe in zip([1, 0], recipes):
+            stop = next(step["command"] for step in recipe["steps"] if step["operation"] == "release")
+            subprocess.run(["/bin/sh", "-c", stop], env=environment, check=True, timeout=10)
+            self.assertEqual(self.status()["snapshot"]["effectiveCount"], count)
+        missing = dict(environment)
+        missing.pop("JOB_KEY")
+        subprocess.run(["/bin/sh", "-c", recipes[0]["steps"][0]["command"]], env=missing, check=True, timeout=10)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+
+    def test_custom_generator_interactive_terminal_does_not_install(self):
+        pid, master = pty.fork()
+        if pid == 0:
+            os.execve(self.cli, [self.cli, "hooks", "generate", "--interactive"], self.environment)
+        waited = False
+        output = b""
+        try:
+            deadline = time.monotonic() + 10
+            while b"Source ID" not in output:
+                self.assertLess(time.monotonic(), deadline, output)
+                if select.select([master], [], [], 0.1)[0]:
+                    output += os.read(master, 4096)
+            os.write(master, b"custom-interactive\nWORK_UNIT\n2m\nBeginWork\nEndWork\nmy-executable\ny\n")
+            while True:
+                self.assertLess(time.monotonic(), deadline, output)
+                if select.select([master], [], [], 0.05)[0]:
+                    try:
+                        output += os.read(master, 8192)
+                    except OSError:
+                        pass
+                result, status = os.waitpid(pid, os.WNOHANG)
+                if result:
+                    waited = True
+                    break
+            self.assertEqual(os.waitstatus_to_exitcode(status), 0, output)
+            self.assertIn(b"BeginWork [acquire]", output)
+            self.assertIn(b"'custom-interactive:'\"${WORK_UNIT}\"", output)
+            self.assertIn(b" --display", output)
+            self.assertIn(b"Nothing was installed", output)
+            self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+        finally:
+            if not waited:
+                os.kill(pid, signal.SIGTERM)
+                os.waitpid(pid, 0)
+            os.close(master)
+
+    def test_custom_generator_rejects_invalid_or_interactive_pipe_options(self):
+        for options in [["--for", "0"], ["--session-variable", "ID:-x"], ["--interactive"], ["--home", self.directory.name]]:
+            result = self.cli_run("hooks", "generate", "--source", "custom-tool", *options, input="")
+            self.assertNotEqual(result.returncode, 0, options)
+        self.assertEqual(self.status()["snapshot"]["effectiveCount"], 0)
+
     def test_settings_change_is_live_and_persists_across_restart(self):
         original = self.protocol(dict(operation="settings"))["preferences"]
         updated = json.loads(json.dumps(original))

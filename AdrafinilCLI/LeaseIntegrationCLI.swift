@@ -68,16 +68,25 @@ enum LeaseIntegrationCLI {
     }
 
     static func generate(_ plan: LeaseCLIPlan) throws -> Int32 {
-        guard plan.positionals == ["generate"] else { throw LeaseCLIUsageError("Use: wakelease hooks generate --source <tool> [--session-variable NAME]") }
-        let source: String
-        if let supplied = plan.values["--source"] { source = ManualHookSnippet.slug(from: supplied) }
-        else if isatty(STDIN_FILENO) != 0 {
-            print("Tool name: ", terminator: "")
-            source = ManualHookSnippet.slug(from: readLine() ?? "my-tool")
-        } else { source = "my-tool" }
+        let allowed: Set = ["--source", "--session-variable", "--for", "--ttl", "--display", "--json", "--interactive", "--start-event", "--stop-event", "--executable"]
+        guard plan.positionals == ["generate"], Set(plan.values.keys).union(plan.flags).isSubset(of: allowed) else {
+            throw LeaseCLIUsageError("Use: wakelease hooks generate [--source <id>] [--session-variable NAME] [--for 1h] [--display] [--json | --interactive]")
+        }
+        let interactive = plan.flags.contains("--interactive") || (plan.values["--source"] == nil && isatty(STDIN_FILENO) != 0 && !plan.flags.contains("--json"))
+        guard !interactive || (isatty(STDIN_FILENO) != 0 && !plan.flags.contains("--json")) else { throw LeaseCLIUsageError("Interactive generation requires a terminal and cannot be combined with --json.") }
+        func value(_ flag: String, _ prompt: String, _ fallback: String) -> String {
+            if let supplied = plan.values[flag] { return supplied }
+            guard interactive else { return fallback }
+            print("\(prompt) [\(fallback)]: ", terminator: "")
+            let text = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return text.isEmpty ? fallback : text
+        }
+        var options = CustomIntegrationOptions()
+        options.source = value("--source", "Source ID", "my-tool")
         let path = HookCommandSupport.canonicalCLIPath()
         let cli = LeaseIntegrations.quote(path)
-        if source == "hermes" {
+        if options.source.lowercased() == "hermes" {
+            guard Set(plan.values.keys).union(plan.flags).isSubset(of: ["--source", "--interactive"]) else { throw LeaseCLIUsageError("The Hermes recipe is a manual YAML merge. Use hooks generate --source hermes without generic recipe options.") }
             func yaml(_ action: String) throws -> String {
                 let text = cli + " hook hermes " + action
                 return try String(decoding: JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed, .withoutEscapingSlashes]), as: UTF8.self)
@@ -86,15 +95,24 @@ enum LeaseIntegrationCLI {
             try print("hooks:\n  pre_llm_call:\n    - command: \(yaml("start"))\n  on_session_end:\n    - command: \(yaml("stop"))")
             return 0
         }
-        let variable = plan.values["--session-variable"] ?? "SESSION_ID"
-        guard variable.range(of: "^[A-Za-z_][A-Za-z0-9_]*$", options: .regularExpression) != nil else { throw LeaseCLIUsageError("Session variable must be a shell variable name.") }
-        let key = "\"${\(variable)}\""
-        for (label, operation) in [("Start / resume", "acquire"), ("Waiting for input", "wait"), ("Finish / cancel", "release")] {
-            let sourceFlag = operation == "acquire" ? " --source " + LeaseIntegrations.quote(source) : ""
-            print("\(label):\n  \(cli) \(operation) \(key)\(sourceFlag) >/dev/null 2>&1 || true\n")
+        options.sessionVariable = value("--session-variable", "Unique work ID variable", "WORK_ID")
+        guard plan.values["--for"] == nil || plan.values["--ttl"] == nil else { throw LeaseCLIUsageError("Use either --for or --ttl, not both.") }
+        let duration = plan.values["--ttl"] ?? value("--for", "Lease lifetime", "1h")
+        guard let seconds = DurationParser.seconds(from: duration) else { throw LeaseCLIUsageError("Invalid lifetime. Use seconds or a duration such as 15m or 2h.") }
+        options.ttlSeconds = seconds
+        options.startEvent = value("--start-event", "Start / resume event label", options.startEvent)
+        options.stopEvent = value("--stop-event", "Finish / cancel event label", options.stopEvent)
+        options.executable = value("--executable", "Executable for wrapper fallback", options.source)
+        let display = plan.flags.contains("--display") || (interactive && ["y", "yes"].contains(value("--display", "Display-dependent work? y/N", "n").lowercased()))
+        options.wakeClass = display ? .display : .system
+        let recipe = try options.recipe(cliPath: path)
+        if plan.flags.contains("--json") { try print(String(decoding: LeaseJSON.encode(recipe), as: UTF8.self)); return 0 }
+        for step in recipe.steps {
+            print("\(step.event) [\(step.operation)]:\n  \(step.command)\n")
         }
-        print("Provide a nonempty unique work ID in \(variable). If the tool has no hooks:\n  \(cli) run -- \(LeaseIntegrations.quote(source)) [arguments]")
-        print("A process wrapper includes idle prompts. Use semantic hooks where available.")
+        print("Use a unique nonempty \(recipe.sessionVariable) per concurrent job/turn. Keys are namespaced by \(recipe.source).")
+        print("Copy start for resume; attach waiting only if supported, and heartbeat before expiry. Nothing was installed.")
+        print("Without lifecycle hooks:\n  \(recipe.wrapper) [arguments]\nThe wrapper includes idle prompts; it does not infer semantic work.")
         return 0
     }
 }

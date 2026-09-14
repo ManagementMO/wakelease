@@ -58,7 +58,20 @@ For shell lifecycle hooks with a unique work ID:
 wakelease hooks generate --source my-tool --session-variable JOB_ID
 ```
 
-The generated commands quote the key, suppress hook output, and fail soft. Supply a nonempty ID unique to that work unit. If your tool requires a JSON hook response, follow its output contract as well. Our first-class `wakelease hook <adapter> <action>` entry point returns `{}` and exit zero even if the broker is absent or the payload is malformed; a wake utility must not erase an agent's prompt or prevent a tool operation.
+The generated commands namespace keys as `<source>:<work-id>`, quote values, skip missing IDs, suppress hook output, and fail soft. Supply a nonempty ID unique to that concurrent job or turn, not merely to a long-lived application. Map the host's event payload to the chosen environment variable; it is not assumed to exist automatically. If your tool requires a JSON hook response, follow its output contract as well. Our first-class `wakelease hook <adapter> <action>` entry point returns `{}` and exit zero even if the broker is absent or the payload is malformed; a wake utility must not erase an agent's prompt or prevent a tool operation.
+
+The native flow is **Settings → Integrations → Custom Integration…**. Choose a stable source ID, the work-ID variable, a finite lifetime and system/display class. Optional event labels help map the recipe to the host, but are never executed. Copy individual start/resume, wait, heartbeat and finish commands, or export the versioned recipe as JSON. Nothing is installed automatically.
+
+Equivalent terminal flows:
+
+```sh
+wakelease hooks generate --interactive
+wakelease hooks generate --source my-tool --session-variable JOB_ID --for 1h --json
+wakelease hooks generate --source gui-tool --for 30m --display \
+  --start-event BeforeWork --stop-event AfterWork --executable /path/to/tool
+```
+
+`--interactive` requires a terminal. `--json` is noninteractive and emits recipe schema version 1, not a universal host configuration file. Event labels are descriptive; install only hooks the actual tool supports. `--for` accepts a duration, or use `--ttl` for seconds. The recipe lifetime is limited to 24 hours. Start also resumes work; waiting follows the user's configured waiting policy. Send heartbeats before expiry if work lasts longer than its lease. System-only is the default.
 
 For processes without semantic hooks:
 

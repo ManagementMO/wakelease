@@ -51,7 +51,10 @@ final class LeaseAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             return
         }
         if model.preview {
-            if CommandLine.arguments.contains("--settings") {
+            if CommandLine.arguments.contains("--custom-integration") {
+                previewWindow = window(title: "WakeLease Custom Integration", view: CustomIntegrationSetup(cliPath: ServiceRegistry.bundledCLI.path, copy: model.copy, close: {}), size: NSSize(width: 620, height: 650))
+                exportSnapshotIfRequested(previewWindow)
+            } else if CommandLine.arguments.contains("--settings") {
                 showSettings()
                 exportSnapshotIfRequested(settingsWindow)
             } else {

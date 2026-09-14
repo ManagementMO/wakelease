@@ -7,6 +7,7 @@ struct LeaseSettings: View {
     @State private var confirmUninstall = false
     @State private var purgeState = false
     @State private var removeApplication = false
+    @State private var showCustomIntegration = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +50,9 @@ struct LeaseSettings: View {
                 }
             }
             .padding(24).frame(width: 580, height: 390)
+        }
+        .sheet(isPresented: $showCustomIntegration) {
+            CustomIntegrationSetup(cliPath: ServiceRegistry.bundledCLI.path, copy: model.copy, close: { showCustomIntegration = false })
         }
         .sheet(isPresented: $confirmUninstall) {
             VStack(alignment: .leading, spacing: 16) {
@@ -171,7 +175,7 @@ struct LeaseSettings: View {
                     }
                     Divider()
                 }
-                Button("Copy Custom Integration Command") { model.copy("\(LeaseIntegrations.quote(ServiceRegistry.bundledCLI.path)) hooks generate --source my-tool") }
+                Button("Custom Integration…", systemImage: "plus") { showCustomIntegration = true }.disabled(model.busy)
                 Text("Configured does not mean live-agent or closed-lid certified. Review the integration notes and test your workflow.")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(16)

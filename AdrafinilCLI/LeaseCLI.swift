@@ -177,7 +177,8 @@ enum WakeLeaseCLI {
       wakelease doctor [--json]
       wakelease integrations [list | preview <name>]
       wakelease integrations install|uninstall <name> [--dry-run] [--yes]
-      wakelease hooks generate --source <name> [--session-variable NAME]
+      wakelease hooks generate --source <id> [--session-variable NAME] [--for 1h]
+      wakelease hooks generate --interactive | --source <id> --json
       wakelease mcp [--source <name>]
       wakelease pause | resume
       wakelease sleep

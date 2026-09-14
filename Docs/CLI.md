@@ -63,11 +63,13 @@ wakelease integrations list
 wakelease integrations preview NAME
 wakelease integrations install NAME [--dry-run] [--yes]
 wakelease integrations uninstall NAME [--dry-run] [--yes]
-wakelease hooks generate --source NAME [--session-variable VARIABLE]
+wakelease hooks generate --source ID [--session-variable VARIABLE] [--for DURATION]
+wakelease hooks generate --interactive
+wakelease hooks generate --source ID --json
 wakelease mcp [--source NAME]
 ```
 
-Applying integration changes needs interactive confirmation or `--yes`. Generated hooks suppress their own output and fail soft. The internal `hook` adapter command emits `{}` and exits zero on unavailable/malformed work so a wake utility cannot break the host's prompt/tool operation.
+Applying integration changes needs interactive confirmation or `--yes`. Custom recipes can set `--display`, `--start-event`, `--stop-event`, and an executable-only `--executable` wrapper fallback. Use either `--for` or `--ttl`; lifetimes must be finite and at most 24 hours. `--interactive` requires a TTY and cannot mix prompts with JSON. JSON recipe version 1 describes commands, not an arbitrary host's configuration schema. Source IDs namespace generated work keys, so concurrent tools do not collide merely because their work IDs match. Generated hooks skip absent work IDs, suppress their own output and fail soft. The internal `hook` adapter command emits `{}` and exits zero on unavailable/malformed work so a wake utility cannot break the host's prompt/tool operation.
 
 MCP is optional, local stdio, and explicitly version-limited. See [INTEGRATIONS.md](INTEGRATIONS.md) for tools, approval requirements, and evidence.
 
