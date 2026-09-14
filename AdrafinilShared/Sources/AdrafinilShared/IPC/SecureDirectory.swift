@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import WakeLeaseProcess
 
 public enum LocalIOError: Error, LocalizedError {
     case unsafePath
@@ -43,7 +44,7 @@ public final class SecureDirectory: @unchecked Sendable {
     public let descriptor: Int32
     public let ownerUID: UInt32
 
-    public init(url: URL, create: Bool, privateDirectory: Bool = true, ownerUID: UInt32 = getuid()) throws {
+    public init(url: URL, create: Bool, privateDirectory: Bool = true, ownerUID: UInt32 = getuid(), requireProtectedACLs: Bool = false) throws {
         guard !create || ownerUID == getuid() else { throw LocalIOError.unsafePath }
         var components = url.pathComponents.filter { $0 != "/" }
         guard url.path.hasPrefix("/"), !components.isEmpty, !components.contains(".."), !components.contains(".") else { throw LocalIOError.unsafePath }
@@ -53,6 +54,7 @@ public final class SecureDirectory: @unchecked Sendable {
         var fd = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fd >= 0 else { throw LocalIOError.system(errno) }
         do {
+            if requireProtectedACLs, wakelease_acl_allows_writing(fd) != 0 { throw LocalIOError.unsafePath }
             for component in components {
                 var next = openat(fd, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
                 if next < 0, errno == ENOENT, create {
@@ -65,6 +67,7 @@ public final class SecureDirectory: @unchecked Sendable {
                 }
                 Darwin.close(fd)
                 fd = next
+                if requireProtectedACLs, wakelease_acl_allows_writing(fd) != 0 { throw LocalIOError.unsafePath }
                 var info = stat()
                 guard fstat(fd, &info) == 0, info.st_uid == 0 || info.st_uid == ownerUID,
                       info.st_mode & 0o022 == 0 || (info.st_uid == 0 && info.st_mode & 0o1000 != 0) else { throw LocalIOError.unsafePath }

@@ -1,0 +1,32 @@
+name: Disposable installed package trust probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Protected package identity (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      WAKELEASE_SOURCE_TESTING: "1"
+      WAKELEASE_INSTALLER_PROBE: approved-disposable-runner
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Select the disposable toolchain
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sw_vers
+          uname -m
+          swift --version
+      - name: Build the no-power identity probe
+        run: swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseInstalledTrustProbe
+      - name: Install and remove only the approved dummy package
+        run: python3 Tests/installed_package_smoke.py
