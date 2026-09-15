@@ -1,15 +1,29 @@
 import AppKit
+import Darwin
 import Foundation
 import ServiceManagement
+
+private enum ProbeMode: String {
+    /// Register both dummy services, then unregister them in the same run (existing disposable-CI measurement).
+    case probe
+    /// Register both dummy services and leave them pending so System Settings approval can be exercised.
+    case register
+    /// Register only the dummy LaunchAgent, isolating user-level approval from the administrator daemon prompt.
+    case registerAgent = "register-agent"
+    /// Report the current statuses without changing anything.
+    case status
+    /// Unregister whatever is still registered.
+    case cleanup
+}
 
 @MainActor
 private final class ProbeDelegate: NSObject, NSApplicationDelegate {
     let output: URL
-    let cleanupOnly: Bool
+    let mode: ProbeMode
 
-    init(output: URL, cleanupOnly: Bool) {
+    init(output: URL, mode: ProbeMode) {
         self.output = output
-        self.cleanupOnly = cleanupOnly
+        self.mode = mode
     }
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -18,7 +32,7 @@ private final class ProbeDelegate: NSObject, NSApplicationDelegate {
             var clean = true
             for (kind, service) in [("agent", SMAppService.agent(plistName: "ProbeAgent.plist")), ("daemon", SMAppService.daemon(plistName: "ProbeDaemon.plist"))] {
                 var result: [String: Any] = ["kind": kind, "before": service.status.rawValue]
-                if !cleanupOnly {
+                if mode == .probe || mode == .register || (mode == .registerAgent && kind == "agent") {
                     do { try service.register(); result["registerReturned"] = true }
                     catch {
                         let error = error as NSError
@@ -26,7 +40,7 @@ private final class ProbeDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 result["afterRegistration"] = service.status.rawValue
-                if service.status != .notRegistered, service.status != .notFound {
+                if mode == .probe || mode == .cleanup, service.status != .notRegistered, service.status != .notFound {
                     do { try await service.unregister() }
                     catch {
                         let error = error as NSError
@@ -38,9 +52,10 @@ private final class ProbeDelegate: NSObject, NSApplicationDelegate {
                 observations.append(result)
             }
             let report: [String: Any] = [
-                "scope": "approved disposable CI only; no power operations",
+                "scope": "approved disposable CI or Devin Cloud Mac only; no power operations",
                 "bundleIdentifier": Bundle.main.bundleIdentifier ?? "",
-                "cleanupOnly": cleanupOnly,
+                "mode": mode.rawValue,
+                "cleanupOnly": mode == .cleanup,
                 "cleanupOK": clean,
                 "services": observations,
             ]
@@ -51,7 +66,7 @@ private final class ProbeDelegate: NSObject, NSApplicationDelegate {
                 FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
                 exit(1)
             }
-            if !clean { exit(1) }
+            if mode == .probe || mode == .cleanup, !clean { exit(1) }
             NSApp.terminate(nil)
         }
     }
@@ -59,13 +74,29 @@ private final class ProbeDelegate: NSObject, NSApplicationDelegate {
 
 @main
 private enum RegistrationProbe {
+    /// Returns the disposable temporary root that must contain both the bundle and the report, or nil when this
+    /// process is not on an approved disposable host.
+    static func disposableRoot(_ environment: [String: String]) -> String? {
+        switch environment["WAKELEASE_REGISTRATION_PROBE"] {
+        case "approved-disposable-runner":
+            guard environment["CI"] == "true" else { return nil }
+            return environment["RUNNER_TEMP"]
+        case "approved-disposable-vm":
+            var present: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            guard sysctlbyname("kern.hv_vmm_present", &present, &size, nil, 0) == 0, present == 1 else { return nil }
+            return environment["WAKELEASE_PROBE_TEMP"]
+        default:
+            return nil
+        }
+    }
+
     @MainActor
     static func main() {
         let environment = ProcessInfo.processInfo.environment
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard environment["CI"] == "true", environment["WAKELEASE_REGISTRATION_PROBE"] == "approved-disposable-runner",
-              let temporary = environment["RUNNER_TEMP"], !temporary.isEmpty, getuid() != 0,
-              arguments.count == 2, ["probe", "cleanup"].contains(arguments[0]), arguments[1].hasPrefix("/"),
+        guard let temporary = disposableRoot(environment), !temporary.isEmpty, getuid() != 0,
+              arguments.count == 2, let mode = ProbeMode(rawValue: arguments[0]), arguments[1].hasPrefix("/"),
               Bundle.main.bundleIdentifier?.hasPrefix("org.wakelease.registration-probe.") == true else { exit(78) }
         let root = URL(fileURLWithPath: temporary, isDirectory: true).resolvingSymlinksInPath().path + "/"
         let output = URL(fileURLWithPath: arguments[1])
@@ -74,7 +105,7 @@ private enum RegistrationProbe {
         DispatchQueue.global().asyncAfter(deadline: .now() + 45) { exit(70) }
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
-        let delegate = ProbeDelegate(output: output, cleanupOnly: arguments[0] == "cleanup")
+        let delegate = ProbeDelegate(output: output, mode: mode)
         app.delegate = delegate
         withExtendedLifetime(delegate) { app.run() }
     }
