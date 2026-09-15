@@ -97,10 +97,11 @@ def main():
         distribution = temporary / "distribution"
         subprocess.run(["python3", str(ROOT / "Scripts/build-community.py"), "--app", str(app), "--output", str(distribution), "--no-dmg"], check=True, timeout=900)
         package = distribution / "Install WakeLease.pkg"
+        subprocess.run(["/usr/bin/pmset", "-g"], check=True, timeout=10)
         attempted = False
         try:
             attempted = True
-            subprocess.run(["sudo", "-n", "installer", "-pkg", str(package), "-target", "/"], check=True, timeout=90)
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(package), "-target", "/"], check=True, timeout=90)
             for name in ["components.json", "trust.lock"]:
                 info = (DESTINATION / name).stat()
                 if info.st_uid != 0 or info.st_mode & 0o022 or info.st_nlink != 1:
@@ -113,7 +114,7 @@ def main():
             try:
                 if not select.select([held.stdout], [], [], 10)[0] or held.stdout.readline() != b"ready\n":
                     raise AssertionError("The owned preflight-rejection process did not start")
-                rejected = subprocess.run(["sudo", "-n", "installer", "-pkg", str(package), "-target", "/"], capture_output=True, timeout=90)
+                rejected = subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(package), "-target", "/"], capture_output=True, timeout=90)
                 if rejected.returncode == 0 or (DESTINATION / "installation.pending").exists():
                     raise AssertionError("Installer did not refuse the running dummy app cleanly")
             finally:
@@ -128,7 +129,7 @@ def main():
                 raise AssertionError("Expected exactly one native installer worker in the package")
             subprocess.run(["sudo", "-n", str(workers[0]), "preflight", "/"], check=True, timeout=30)
             subprocess.run([str(executable), "absent"], check=True, timeout=10)
-            subprocess.run(["sudo", "-n", "installer", "-pkg", str(distribution / "Repair Interrupted Install.pkg"), "-target", "/"], check=True, timeout=90)
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(distribution / "Repair Interrupted Install.pkg"), "-target", "/"], check=True, timeout=90)
             subprocess.run([str(executable), "installed"], check=True, timeout=10)
             impostor = temporary / "impostor"
             shutil.copy2(binary, impostor)
@@ -141,9 +142,9 @@ def main():
             verify_no_write_access()
             subprocess.run([str(executable), "remove"], check=True, timeout=10)
             subprocess.run([str(executable), "absent"], check=True, timeout=10)
-            subprocess.run(["sudo", "-n", "installer", "-pkg", str(package), "-target", "/"], check=True, timeout=90)
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(package), "-target", "/"], check=True, timeout=90)
             subprocess.run([str(executable), "installed"], check=True, timeout=10)
-            subprocess.run(["sudo", "-n", "installer", "-pkg", str(distribution / "Remove Installer Approval.pkg"), "-target", "/"], check=True, timeout=90)
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(distribution / "Remove Installer Approval.pkg"), "-target", "/"], check=True, timeout=90)
             subprocess.run([str(executable), "absent"], check=True, timeout=10)
             if not APPLICATION.is_dir() or (DESTINATION / "installation.pending").exists():
                 raise AssertionError("Approval-only removal changed the app or left an incomplete transaction")

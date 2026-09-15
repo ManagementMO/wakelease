@@ -71,7 +71,7 @@ def main():
         scripts.mkdir()
         binaries = []
         for architecture in sorted(architectures):
-            base = ["swift", "build", "--scratch-path", scratch, "--configuration", "release", "--arch", architecture, "--disable-experimental-prebuilts"]
+            base = ["swift", "build", "--scratch-path", scratch / ("build-" + architecture), "--configuration", "release", "--arch", architecture, "--disable-experimental-prebuilts"]
             run([*base, "--product", "WakeLeaseInstaller"], env=environment)
             binary = Path(output([*base, "--show-bin-path"], env=environment)) / "WakeLeaseInstaller"
             copied = temporary / ("installer-" + architecture)

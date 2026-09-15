@@ -53,7 +53,7 @@ def main():
     scratch = ROOT / ".build/app-packaging"
     scratch.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ, WAKELEASE_SOURCE_TESTING="1")
-    base = ["swift", "build", "--scratch-path", str(scratch), "--configuration", args.configuration, "--disable-experimental-prebuilts"]
+    base = ["swift", "build", "--configuration", args.configuration, "--disable-experimental-prebuilts"]
     architectures = list(dict.fromkeys(args.arch or [None]))
 
     with tempfile.TemporaryDirectory(prefix="wakelease-package-", dir=scratch) as temporary:
@@ -81,7 +81,8 @@ def main():
                 binaries.append(args.bin_dir.absolute() / product)
             else:
                 for architecture in architectures:
-                    architecture_base = [*base, *(["--arch", architecture] if architecture else [])]
+                    architecture_base = [*base, "--scratch-path", str(scratch / ("build-" + (architecture or "native"))),
+                                         *(["--arch", architecture] if architecture else [])]
                     command = [*architecture_base, "--product", product]
                     if product in ["WakeLeaseDaemon", "WakeLeaseHelper"]:
                         role = "daemon" if product == "WakeLeaseDaemon" else "helper"
