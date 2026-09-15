@@ -11,24 +11,43 @@ private struct ProbeFailure: Error, LocalizedError {
     }
 }
 
+/// Owned cross-process fixture: a disposable ad-hoc `Client.app` talks to a disposable ad-hoc `Service.app` over a
+/// launchd Mach service that the runner bootstraps into the current user domain for the duration of one scenario.
+/// This mirrors the production listener shape (`NSXPCListener(machServiceName:)`), which is the only listener type
+/// that honours `setConnectionCodeSigningRequirement`; embedded `.xpc` service listeners assert on it.
 private struct ProbeContext: Sendable {
     let root: URL
     let scenario: String
+    let machService: String
     let isService: Bool
     var app: URL {
         root.appendingPathComponent("Client.app")
     }
     var service: URL {
-        app.appendingPathComponent("Contents/XPCServices/Probe.xpc")
+        root.appendingPathComponent("Service.app")
     }
     var journal: URL {
         root.appendingPathComponent("events.json")
+    }
+
+    static var isRemoteFixtureHost: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        switch environment["WAKELEASE_XPC_PROCESS_FIXTURE"] {
+        case "1": return environment["CI"] == "true"
+        case "disposable-vm":
+            var present: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            return sysctlbyname("kern.hv_vmm_present", &present, &size, nil, 0) == 0 && present == 1
+        default: return false
+        }
     }
 
     init() throws {
         guard getuid() != 0,
               let path = Bundle.main.object(forInfoDictionaryKey: "WakeLeaseFixtureRoot") as? String,
               let scenario = Bundle.main.object(forInfoDictionaryKey: "WakeLeaseProbeMode") as? String,
+              let machService = Bundle.main.object(forInfoDictionaryKey: "WakeLeaseMachService") as? String,
+              machService.hasPrefix("org.wakelease.xpc-fixture."),
               ["valid", "listener-role", "listener-hash", "server-role", "server-hash"].contains(scenario) else {
             throw ProbeFailure(message: "Missing remote fixture context")
         }
@@ -41,9 +60,11 @@ private struct ProbeContext: Sendable {
         }
         self.root = root
         self.scenario = scenario
-        isService = Bundle.main.object(forInfoDictionaryKey: "CFBundlePackageType") as? String == "XPC!"
-        guard Bundle.main.bundleURL.resolvingSymlinksInPath() == (isService ? service : app).resolvingSymlinksInPath() else {
-            throw ProbeFailure(message: "Executable is outside the owned fixture bundle")
+        self.machService = machService
+        switch Bundle.main.bundleURL.resolvingSymlinksInPath() {
+        case root.appendingPathComponent("Service.app").resolvingSymlinksInPath(): isService = true
+        case root.appendingPathComponent("Client.app").resolvingSymlinksInPath(): isService = false
+        default: throw ProbeFailure(message: "Executable is outside the owned fixture bundle")
         }
     }
 
@@ -76,6 +97,8 @@ private protocol ProcessEchoProtocol {
 private struct ProcessMetrics: Codable, Sendable {
     let serverPID: Int32
     let serverUID: UInt32
+    var stage = "started"
+    var failure: String?
     var accepted = 0
     var calls = 0
 }
@@ -91,7 +114,7 @@ private final class ProcessEchoServer: NSObject, NSXPCListenerDelegate, ProcessE
         try JSONEncoder().encode(state.withLock { $0 }).write(to: context.journal, options: .atomic)
     }
 
-    private func record(_ change: @Sendable (inout ProcessMetrics) -> Void) {
+    func record(_ change: @Sendable (inout ProcessMetrics) -> Void) {
         state.withLock { metrics in
             change(&metrics)
             do {
@@ -121,11 +144,20 @@ private final class ProcessEchoServer: NSObject, NSXPCListenerDelegate, ProcessE
     static func serve(_ context: ProbeContext) throws {
         let server = try ProcessEchoServer(context: context)
         let identifier = context.scenario == "listener-role" ? WakeLeaseIdentity.daemonBundleID : WakeLeaseIdentity.appBundleID
-        let requirement = try context.requirement(at: context.app, identifier: identifier, wrongHash: context.scenario == "listener-hash")
-        let listener = NSXPCListener.service()
+        let requirement: String
+        do {
+            requirement = try context.requirement(at: context.app, identifier: identifier, wrongHash: context.scenario == "listener-hash")
+        } catch {
+            let message = error.localizedDescription
+            server.record { $0.stage = "requirement"; $0.failure = message }
+            throw error
+        }
+        server.record { $0.stage = "requirement-built" }
+        let listener = NSXPCListener(machServiceName: context.machService)
         listener.delegate = server
         listener.setConnectionCodeSigningRequirement(requirement)
         DispatchQueue.global().asyncAfter(deadline: .now() + 20) { exit(0) }
+        server.record { $0.stage = "listening" }
         withExtendedLifetime(server) {
             listener.resume()
             RunLoop.current.run()
@@ -145,7 +177,7 @@ private enum ProcessOutcome: Sendable {
 private func runClient(_ context: ProbeContext) async throws -> [String: Any] {
     let identifier = context.scenario == "server-role" ? WakeLeaseIdentity.daemonBundleID : WakeLeaseIdentity.helperBundleID
     let requirement = try context.requirement(at: context.service, identifier: identifier, wrongHash: context.scenario == "server-hash")
-    let connection = NSXPCConnection(serviceName: WakeLeaseIdentity.helperBundleID)
+    let connection = NSXPCConnection(machServiceName: context.machService)
     connection.remoteObjectInterface = NSXPCInterface(with: ProcessEchoProtocol.self)
     connection.setCodeSigningRequirement(requirement)
     defer { connection.invalidate() }
@@ -160,7 +192,7 @@ private func runClient(_ context: ProbeContext) async throws -> [String: Any] {
         }
         proxy.echo("owned-cross-process-ping") { once.resume(.reply($0, $1, $2)) }
     }
-    let metrics = (try? JSONDecoder().decode(ProcessMetrics.self, from: Data(contentsOf: context.journal))) ?? ProcessMetrics(serverPID: 0, serverUID: 0)
+    let metrics = (try? JSONDecoder().decode(ProcessMetrics.self, from: Data(contentsOf: context.journal))) ?? ProcessMetrics(serverPID: 0, serverUID: 0, stage: "absent")
     let label: String
     var matched = false
     var errorCode = 0
@@ -180,6 +212,8 @@ private func runClient(_ context: ProbeContext) async throws -> [String: Any] {
         "clientPID": getpid(),
         "serverPID": metrics.serverPID,
         "serverUID": metrics.serverUID,
+        "serverStage": metrics.stage,
+        "serverFailure": metrics.failure ?? "",
         "accepted": metrics.accepted,
         "calls": metrics.calls,
         "peerIdentityMatched": matched,
@@ -193,14 +227,12 @@ enum XPCProcessEntry {
     static func main() async {
         do {
             let context = try ProbeContext()
+            guard ProbeContext.isRemoteFixtureHost, Array(CommandLine.arguments.dropFirst()) == [context.scenario] else {
+                throw ProbeFailure(message: "Cross-process verification is remote-only")
+            }
             if context.isService {
                 try ProcessEchoServer.serve(context)
             } else {
-                guard ProcessInfo.processInfo.environment["CI"] == "true",
-                      ProcessInfo.processInfo.environment["WAKELEASE_XPC_PROCESS_FIXTURE"] == "1",
-                      Array(CommandLine.arguments.dropFirst()) == [context.scenario] else {
-                    throw ProbeFailure(message: "Cross-process verification is remote-only")
-                }
                 let report = try await runClient(context)
                 let data = try JSONSerialization.data(withJSONObject: report, options: [.sortedKeys])
                 FileHandle.standardOutput.write(data + Data("\n".utf8))
