@@ -78,6 +78,25 @@ This checks all three pkg checksums, expands their contents into a temporary dir
 
 These tests do not certify a downloaded/quarantined package's human Gatekeeper dialogs, approved product helper startup, real user-session lifecycle, or closed-lid behavior. Apple enrollment is not a prerequisite for those community-path tests; an approved separate Mac and any required human approvals are.
 
+## Cross-process XPC fixture
+
+`Tests/xpc_process_smoke.py` (CI job `process_xpc`, or `WAKELEASE_XPC_PROCESS_FIXTURE=disposable-vm` on a hypervisor-reported disposable Mac) builds two separately ad-hoc-signed hardened-runtime bundles, bootstraps the service into the current user launchd domain under a unique `org.wakelease.xpc-fixture.` Mach service, and runs five client scenarios in fresh processes. Exact role/hash requirements are built through `InstalledComponentTrust`, exactly as the product does. The valid case must receive a reply from a different PID with the same UID, with exactly one accepted connection and one call and a matched peer identity; wrong listener role/hash must reject before the delegate runs (zero accepted connections); wrong client role/hash must reject the reply-side trust check. The fixture boots the service out and confirms it no longer exists before asserting.
+
+The earlier embedded `Contents/XPCServices/*.xpc` variant rejected its own valid peer: Apple's SDK documents `setConnectionCodeSigningRequirement(_:)` for anonymous and Mach-service listeners only, so `NSXPCListener.service()` never reached `resume`. The corrected fixture uses the production listener shape (`NSXPCListener(machServiceName:)`), not a weakened requirement. On the Devin Cloud Mac (macOS 26.5.2 arm64 VM) all five cases passed with a separate service PID and UID 501; consult the branch's `process_xpc` jobs for both GitHub architectures. This proves transport and requirement enforcement between two processes, not the installed product's root helper or ServiceManagement approval.
+
+## Disposable dummy approval experiment
+
+`Tests/service_approval_probe.py` extends the harmless registration fixture for a hypervisor-reported disposable Mac (`WAKELEASE_REGISTRATION_PROBE=approved-disposable-vm`). It registers a uniquely named ad-hoc dummy app (`WakeLease Dummy Probe <token>`, identifier `org.wakelease.registration-probe.<uuid>`) whose LaunchAgent/LaunchDaemon run a helper that only records its PID/UID/parent into a private fixture directory. `register`, `register --agent-only`, `status --root` and `cleanup --root` leave the registration pending so the exact System Settings row can be exercised; the fixture refuses foreign directories and deletes only its own. No WakeLease power code is involved.
+
+Observed on the Devin Cloud Mac (macOS 26.5.2 VM, standard non-root user):
+
+- Agent + daemon app: `SMAppService.agent.register()` returned and briefly reported `enabled`; launchd started the dummy agent once (PID with parent 1, UID 501, evidence written by the helper). `SMAppService.daemon.register()` threw `SMAppServiceErrorDomain` code 1 "Operation not permitted" while its status was `requiresApproval`—the exact pattern `ServiceRegistrationPolicy` classifies as pending approval. Both statuses then settled at `requiresApproval`, and Login Items showed one grouped row "2 items: 1 item affects all users", switched off.
+- Toggling that row on produced a macOS **administrator password prompt** ("Login Items is trying to modify your system settings"). Per the approved boundary the prompt was cancelled, nothing was entered, and approval of the daemon therefore remains **unverified**.
+- Agent-only app: registration reported `enabled` with no prompt at all; Login Items showed "1 item" already on; the dummy agent started under launchd (parent PID 1, UID 501).
+- `cleanup` returned both fixtures to `notRegistered`, `launchctl print` no longer finds the labels, and the rows disappeared after System Settings was reopened. launchd retains only its per-label enable override entries, which is a normal artifact of unregistered labels on that disposable VM.
+
+This matches the product's expectation that helper (daemon) approval requires an administrator, while the user-domain daemon (agent) does not. It does not prove the real WakeLease helper's approved startup, its power cleanup, or behavior on a physical Mac or macOS 15.4.
+
 ## Additional offline host and performance checks
 
 ```sh
@@ -125,8 +144,8 @@ Concurrent CLI latency is load-sensitive and includes process startup and persis
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
 | Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `b81238a` and the earlier checkpoints above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
-| Installed XPC authorization | Correct pinned code/role accepted; modified hashes, missing approval and wrong roles rejected; optional Developer ID team checks | Static-code, root-pin and anonymous NSXPC enforcement fixtures covered. Full cross-process product peers after administrator/service approval remain unverified |
-| Registration and approval | Fresh install, Gatekeeper/administrator decisions, denial, service approval, login and restart | Harmless disposable probes are separate evidence; the actual product was not installed on the development Mac |
+| Installed XPC authorization | Correct pinned code/role accepted; modified hashes, missing approval and wrong roles rejected; optional Developer ID team checks | Static-code, root-pin, anonymous NSXPC and separate-process Mach-service fixtures covered (positive reply from a different PID; wrong role/hash rejected on both sides). Full installed product peers after administrator/service approval remain unverified |
+| Registration and approval | Fresh install, Gatekeeper/administrator decisions, denial, service approval, login and restart | Harmless disposable probes are separate evidence: dummy agent approval/startup observed on a cloud VM; dummy daemon approval stopped at the administrator password prompt. The actual product was not installed on the development Mac |
 | Community upgrade/repair | Coherent complete-package replacement, inactive services, interrupted installation, wrong-build recovery and rollback | Protected transaction/record tests and read-only package inspection covered; full live product lifecycle remains unverified |
 | Uninstall | Active work paused, `SleepDisabled 0`, services/owned hooks/link and matching approval removed, foreign edits preserved, coordinated multi-user removal | Coordinator/ownership/pin-removal fixtures covered; real approved-product removal remains unverified |
 | Closed-lid work | Observable progress with no external display, on AC and battery | Requires explicit physical test |

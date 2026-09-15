@@ -75,7 +75,16 @@ This entire run was later cancelled when the next verification-branch run replac
 
 Artifacts are `WakeLease-remote-ui-macos-15-intel` and `WakeLease-remote-ui-macos-26`. They contain screenshots and audit logs. Do not confuse the overall cancelled run with those completed job results. Rerun all required jobs for the final candidate.
 
-## Current failing work: cross-process XPC fixture
+## Cloud Mac session result (macOS 26.5.2 `VirtualMac2,1`, `kern.hv_vmm_present=1`, Xcode 26.6 / Swift 6.3.3)
+
+All work ran on the Devin Cloud VM; nothing ran on the user's computer.
+
+- Cross-process XPC fixture **fixed** in `463ef29`: root cause was `NSXPCListener.service()` + `setConnectionCodeSigningRequirement` (SDK: anonymous/Mach-service listeners only). The fixture now uses a temporary user-domain Mach service with the production listener shape. All five cases passed on the VM: valid reply from a separate PID / UID 501 with `accepted == 1`, `calls == 1`, `peerIdentityMatched`; listener role/hash rejected with zero admissions; server role/hash rejected the reply. Requirements were not weakened.
+- Dummy approval/startup experiment **implemented and attempted** in `7c5a8c4` (`Tests/service_approval_probe.py`). Agent + daemon fixture: agent started under launchd (parent PID 1, UID 501) and daemon registration returned operation-not-permitted with `requiresApproval`; the grouped Login Items row prompted for an **administrator password**, so the attempt stopped there (cancelled, nothing entered). Agent-only fixture: `enabled` and started with no prompt. Both fixtures cleaned to `notRegistered`, rows gone after reopening Settings. Daemon approval therefore remains a documented limitation.
+- Passed on the VM: `swift test` debug and release (576 tests / 67 suites each), 28 CLI cases, `xpc_smoke`, `xpc_process_smoke`, `lint`, `release_tools`, `check-repository`, `ui_smoke` (6 methods, no skips) and `WAKELEASE_REQUIRE_UI_AUDIT=1 ui_smoke`.
+- Not possible from the VM: `gh`/GitHub API were unauthenticated (rate-limited anonymously), so `workflow_dispatch` for `ci.yml`/`installed-package-probe.yml` could not be issued from the shell. `ci.yml` also runs on `pull_request`; opening the PR from this branch is the authoritative way to run `process_xpc` on both GitHub architectures. `installed-package-probe.yml` must still be dispatched by a human (its inputs did not change after run 34931435762).
+
+## Previously failing work: cross-process XPC fixture (resolved, kept for history)
 
 Relevant commits:
 
@@ -123,9 +132,9 @@ The fixture uses one temporary `Client.app` with `Contents/XPCServices/Probe.xpc
 - `.github/workflows/service-registration-probe.yml` — WARNING: its existing matrix includes `self-issued` and certificate trust flags. Do not dispatch it unchanged for this new approval test. Use an explicitly ad-hoc-only path or a separately guarded fixture.
 - `Docs/TESTING.md`, `Docs/INSTALLATION.md`, `Docs/RELEASING.md`, `Docs/THREAT_MODEL.md`, `Docs/HARDWARE_TESTS.md` — evidence, release gates, security constraints and human-only cases. They still mostly describe the stable `87819c3` checkpoint and need final updates after new validation.
 
-## Dummy approval/startup test still to implement
+## Dummy approval/startup test (implemented; daemon approval blocked at the administrator prompt)
 
-The user selected "Allow remote dummy approval" in a specific confirmation. No implementation or execution of that new Settings approval action has happened yet.
+The user selected "Allow remote dummy approval" in a specific confirmation. See the session result above for what was observed; the rules below still govern any repeat.
 
 Reuse the harmless registration fixture rather than the real helper. Use a unique bundle display name and identifier, verify the exact Settings row, and never toggle an ambiguous or unrelated item. Observe `SMAppService.status` before/after and prove actual dummy helper startup, ideally with scoped PID/UID evidence. Use existing accessibility permission or Cloud Computer Use; do not change privacy permissions to force it through.
 
@@ -149,14 +158,14 @@ No new project dependency was added in this round. Preserve pinned dependencies 
 
 ## Acceptance criteria
 
-- [ ] Execution placement is verified as an isolated cloud Mac, with no path back to the user's personal computer.
-- [ ] Cross-process positive echo proves a separate PID and expected UID; wrong role/hash cases reject for the intended reason.
-- [ ] Expanded package damage/repair/upgrade/rollback tests remain green on both GitHub macOS architectures.
-- [ ] Native preview and interaction checks run remotely; any skipped/manual cases are reported accurately.
-- [ ] Approved dummy-helper Settings approval/startup is attempted with precise targeting, credential-stop handling and cleanup.
-- [ ] All relevant debug/release tests, lint, package checks and CI pass for the final code. Capture actual logs and artifacts.
-- [ ] Commit and push verified changes; do not move broken verification work onto `main`. Do not force-push or rewrite existing history.
-- [ ] Report remaining physical MacBook, human accessibility, provider/account, exact macOS 15.4 and supported-publication prerequisites without requiring paid Apple enrollment.
+- [x] Execution placement is verified as an isolated cloud Mac, with no path back to the user's personal computer.
+- [x] Cross-process positive echo proves a separate PID and expected UID; wrong role/hash cases reject for the intended reason (VM; confirm both GitHub architectures on the PR's `process_xpc` jobs).
+- [ ] Expanded package damage/repair/upgrade/rollback tests remain green on both GitHub macOS architectures (last green: run 34931435762; a re-dispatch of `installed-package-probe.yml` needs an authenticated human).
+- [x] Native preview and interaction checks run remotely; no skips on the VM.
+- [x] Approved dummy-helper Settings approval/startup is attempted with precise targeting, credential-stop handling and cleanup. Agent approved/started; daemon approval stopped at the administrator password prompt.
+- [x] All relevant debug/release tests, lint and repository checks pass on the VM for the final code; GitHub CI for the final commit is tracked on the PR.
+- [x] Commit and push verified changes; `main` unchanged at `87819c3`; no force-push or history rewrite.
+- [x] Remaining physical MacBook, human accessibility, provider/account, exact macOS 15.4 and supported-publication prerequisites are recorded in `Docs/TESTING.md` and `Docs/HARDWARE_TESTS.md` without requiring paid Apple enrollment.
 
 ## Cloud handoff placement reference
 
