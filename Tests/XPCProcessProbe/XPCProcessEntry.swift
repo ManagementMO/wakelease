@@ -91,7 +91,7 @@ private final class ProcessEchoServer: NSObject, NSXPCListenerDelegate, ProcessE
         try JSONEncoder().encode(state.withLock { $0 }).write(to: context.journal, options: .atomic)
     }
 
-    private func record(_ change: (inout ProcessMetrics) -> Void) {
+    private func record(_ change: @Sendable (inout ProcessMetrics) -> Void) {
         state.withLock { metrics in
             change(&metrics)
             do {
