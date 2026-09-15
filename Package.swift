@@ -33,6 +33,7 @@ let package = Package(
     ] + (sourceTesting ? [
         .executableTarget(name: "WakeLeaseRemovalProbe", dependencies: ["AdrafinilShared"], path: "Tests/RootRemovalProbe"),
         .executableTarget(name: "WakeLeaseXPCProbe", dependencies: ["AdrafinilShared"], path: "Tests/XPCBoundaryProbe"),
+        .executableTarget(name: "WakeLeaseXPCProcessProbe", dependencies: ["AdrafinilShared"], path: "Tests/XPCProcessProbe"),
         .executableTarget(name: "WakeLeaseInstalledTrustProbe", dependencies: ["AdrafinilShared"], path: "Tests/InstalledTrustProbe"),
     ] : []),
     swiftLanguageModes: [.v6],
