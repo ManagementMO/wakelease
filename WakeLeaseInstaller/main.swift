@@ -108,6 +108,6 @@ do {
         print("WakeLease installer phase completed: " + arguments[0])
     }
 } catch {
-    FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))
+    FileHandle.standardError.write(Data(("WakeLease installer: " + error.localizedDescription + "\n").utf8))
     exit(1)
 }

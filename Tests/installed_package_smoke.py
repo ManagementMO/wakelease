@@ -98,6 +98,8 @@ def main():
         subprocess.run(["python3", str(ROOT / "Scripts/build-community.py"), "--app", str(app), "--output", str(distribution), "--no-dmg"], check=True, timeout=900)
         package = distribution / "Install WakeLease.pkg"
         subprocess.run(["/usr/bin/pmset", "-g"], check=True, timeout=10)
+        registry = plistlib.loads(subprocess.check_output(["/usr/sbin/ioreg", "-r", "-c", "IOPMrootDomain", "-d", "1", "-a"], timeout=10))
+        print("Read-only kernel SleepDisabled:", registry[0].get("SleepDisabled", "not exported"), flush=True)
         attempted = False
         try:
             attempted = True
@@ -148,6 +150,13 @@ def main():
             subprocess.run([str(executable), "absent"], check=True, timeout=10)
             if not APPLICATION.is_dir() or (DESTINATION / "installation.pending").exists():
                 raise AssertionError("Approval-only removal changed the app or left an incomplete transaction")
+        except Exception:
+            try:
+                lines = Path("/var/log/install.log").read_text(errors="replace").splitlines()[-1000:]
+                print("\n".join(line for line in lines if any(word in line for word in ["WakeLease", "org.wakelease", "preinstall", "SleepDisabled"])), flush=True)
+            except OSError as error:
+                print("Scoped installer log unavailable:", error, flush=True)
+            raise
         finally:
             if attempted:
                 subprocess.run(["sudo", "-n", "env", "CI=true", "WAKELEASE_INSTALLER_PROBE=approved-disposable-runner", "/usr/bin/python3",

@@ -95,6 +95,28 @@ struct SafetySchedulingTests {
         #expect(PowerManagementInspector.parseSleepDisabled("SleepDisabled 1") == true)
         #expect(PowerManagementInspector.parseSleepDisabled("SleepDisabled unknown") == nil)
     }
+
+    @Test
+    func `an unset system override requires an explicit live kernel state`() {
+        let output = "System-wide power settings:\nCurrently in use:\n sleep 0\n displaysleep 0\n"
+        #expect(PowerManagementInspector.resolveSleepDisabled(output, liveSetting: false) == false)
+        #expect(PowerManagementInspector.resolveSleepDisabled(output, liveSetting: true) == true)
+        #expect(PowerManagementInspector.resolveSleepDisabled(output, liveSetting: nil) == nil)
+    }
+
+    @Test
+    func `malformed or incomplete power output cannot become confirmed off`() {
+        for output in ["", "sleep 0", "Currently in use:\n sleep 0", "System-wide power settings:\n SleepDisabled unknown\nCurrently in use:\n", "System-wide power settings:\n SleepDisabled: 0\nCurrently in use:\n"] {
+            #expect(PowerManagementInspector.resolveSleepDisabled(output, liveSetting: false) == nil)
+        }
+    }
+
+    @Test
+    func `a persisted or live sleep override prevents an off result`() {
+        #expect(PowerManagementInspector.resolveSleepDisabled("SleepDisabled 1", liveSetting: false) == true)
+        #expect(PowerManagementInspector.resolveSleepDisabled("SleepDisabled 0", liveSetting: true) == true)
+        #expect(PowerManagementInspector.resolveSleepDisabled("SleepDisabled 0", liveSetting: nil) == false)
+    }
 }
 
 @Suite("Production component trust")

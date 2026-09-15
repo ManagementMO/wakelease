@@ -35,6 +35,14 @@ Ordinary `caffeinate`/IOPM idle assertions do not establish standalone closed-li
 
 The helper executes only fixed argument vectors with a sanitized environment. No caller supplies a privileged executable, path, environment or arbitrary power-setting argument. A `pmset` operation has a ten-second subprocess deadline, bounded captured output, termination/kill/reaping, and a subsequent read-back. An unreapable child causes helper exit so launchd can clean up the process group.
 
+## Read-only inspection on fresh installations
+
+Fresh macOS installations can omit `SleepDisabled` from `pmset -g` because the command prints only explicitly stored system power settings. Missing text alone is not proof that sleep is enabled. When both normal output sections are present and no malformed `SleepDisabled` field is present, the inspector also reads the kernel's `IOPMrootDomain` `SleepDisabled` property through IOKit. It accepts only an explicit boolean; missing or differently typed live data remains unknown. Either a persisted or a live `true` value prevents reporting the override as off.
+
+This is read-only inspection, not a replacement for the retained `pmset` write/activation path. No setting is initialized or changed merely to make installation or a test succeed. Unit fixtures cover omitted defaults, unknown live state, malformed output and conflicting stored/live values.
+
+Primary source evidence: Apple's [pmset implementation](https://github.com/apple-oss-distributions/PowerManagement/blob/d415e45501842834a280930c3eed9186544a67f0/pmset/pmset.m), [powerd system-setting activation](https://github.com/apple-oss-distributions/PowerManagement/blob/d415e45501842834a280930c3eed9186544a67f0/pmconfigd/PMSettings.m), and [IOPMrootDomain boolean property handling](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/iokit/Kernel/IOPMrootDomain.cpp). Runtime exposure must still be checked on the tested OS; a missing property never becomes an assumed `false`.
+
 ## Final effective lease
 
 The broker derives demand; integrations do not directly toggle the helper. On an effective `1 -> 0` transition, the reconciler:
