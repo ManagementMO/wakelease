@@ -21,11 +21,22 @@ These are operator instructions, not commands to run automatically. Normal tests
 
 Normal clear failures stay visible and retryable. The helper clears stale persistent state at startup and on termination. Do not unregister or delete the helper merely because the UI is unavailable; that can remove the recovery mechanism.
 
+## Interrupted community installation
+
+The community installer creates a protected admission marker while replacing files. An incomplete or mismatched package intentionally leaves services unauthorized; this is not fixed by editing the code-hash record.
+
+1. Keep the lid open, confirm no active WakeLease services/work, and quit the failed Installer process and WakeLease in every logged-in account.
+2. Open **Repair Interrupted Install.pkg from the same DMG**. Approve the administrator request. Repair checks that the full component record matches the pending transaction, repeats idle checks, and reinstalls/verifies the complete bundle before restoring authorization.
+3. If repair reports active services, an unknown power state, or a different pending build, stop and resolve that specific condition. Do not delete `installation.pending`, change its ownership, disable Gatekeeper, or copy individual binaries to force acceptance.
+4. After successful repair, enable and approve services from the app, then check doctor and applied protection. Repair itself does not start wake protection.
+
+If services were never approved and you want to remove the unused installation approval instead, quit WakeLease and disable its background items, then use **Remove Installer Approval.pkg**. It refuses active processes/services or unknown power state. It removes only the protected approval record; reopen the app to finish ordinary user-data cleanup and optional Trash removal. See [INSTALLATION.md](INSTALLATION.md).
+
 ## Interrupted removal
 
 `doctor` reports persisted helper removal separately from ordinary power state. A valid reservation intentionally denies new wake claims, including after helper restart; it never means `SleepDisabled` should stay enabled.
 
-1. Use the same user account and a coherent, correctly signed WakeLease app.
+1. Use the same user account and a coherent, installer-approved or Developer ID-signed WakeLease app.
 2. Either retry uninstall, or choose **Enable WakeLease Services** to cancel that user's pending reservation and restore service availability.
 3. Resume the user broker explicitly if it remains paused. Confirm doctor/applied protection before relying on new work.
 4. If another account owns the reservation, ask that user to complete or restore it. Do not cancel another user's transaction.
@@ -54,7 +65,7 @@ The operator, not an automated agent, runs this and supplies any requested admin
 
 Do not reset all power preferences, change `hibernatemode`, unload unrelated jobs, or disable SIP/Gatekeeper. If a root subprocess or the system power service is wedged, retain evidence and seek platform/administrator assistance. A reboot alone is not proof that a persistent override was cleared.
 
-Once normal power behavior is verified, use the supported uninstaller or re-enable the coherent signed app through ServiceManagement. Never repair production by allowing unsigned XPC callers.
+Once normal power behavior is verified, use the guarded uninstaller or re-enable the coherent approved app through ServiceManagement. Never repair production by removing XPC identity checks or trusting a user-writable pin record.
 
 ## What a passing physical result means
 

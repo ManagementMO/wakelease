@@ -1,12 +1,12 @@
 # Supervised MacBook verification
 
-This procedure changes real power behavior. Run it only on an explicitly approved test Mac with an authorized, coherent team-signed build and a recovery operator present. It is not executed by CI or ordinary unit tests. Do not run it over valuable unattended work, in a bag, or where losing a remote connection would prevent recovery.
+This procedure changes real power behavior. Run it only on an explicitly approved test Mac with a coherent administrator-installed community build or authorized Developer ID build, and a recovery operator present. It is not executed by CI or ordinary unit tests. Do not run it over valuable unattended work, in a bag, or where losing a remote connection would prevent recovery.
 
-A development-only/ad-hoc build and `--simulate` cannot pass this matrix. A successful API result is not evidence that the closed Mac kept computing or actually slept.
+An unapproved development build and `--simulate` cannot pass this matrix. The community package needs administrator-approved exact pins and explicit service approval, not paid Apple enrollment. A successful API result is not evidence that the closed Mac kept computing or actually slept.
 
 ## Record the environment
 
-Record the exact app version, commit, architecture, signing team and artifact checksum. Record only necessary hardware information; do not publish serial numbers, hardware UUIDs, account names or private logs.
+Record the exact app version, commit, architecture, installed component record (or signing team) and artifact checksum. Record only necessary hardware information; do not publish serial numbers, hardware UUIDs, account names or private logs.
 
 Read-only platform commands:
 

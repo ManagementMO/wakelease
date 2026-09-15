@@ -1,6 +1,6 @@
 # Local lease protocol — version 1
 
-Development status: the generic broker, local transport, CLI, simulation daemon and production power-controller path are implemented and compile. Production requires team-signed services. Live signing-boundary tests and physical sleep certification remain separate release gates. A successful **simulation** lease changes no macOS power setting and holds no IOPM assertion.
+Development status: the generic broker, local transport, CLI, simulation daemon and production power-controller path are implemented and compile. Real power control requires services authenticated by administrator-installed exact code pins or a matching Apple-issued team, plus ServiceManagement approval. Full installed-product boundary tests and physical sleep certification remain separate release gates; paid Apple enrollment is not required for the community package. A successful **simulation** lease changes no macOS power setting and holds no IOPM assertion.
 
 ## Contract
 

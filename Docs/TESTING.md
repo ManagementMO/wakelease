@@ -14,7 +14,7 @@ python3 Scripts/lint.py
 
 All power controllers used by unit/integration tests are fake or explicitly simulated. Integration configuration lives in temporary homes. The unsigned-execution tests verify rejection before any power mutation. Package smoke tests assemble a disposable ad-hoc bundle, verify integrity, exercise version/preview paths, and confirm privileged-mode refusal. They do not install the bundle or register services.
 
-The SwiftPM root builds all four executables. The source-testing opt-in uses pinned Swift Testing 6.2.4 and SwiftSyntax 602.0.0 to support Command Line Tools installations missing the bundled Testing module. Keep its scratch directory separate from other toolchain/macro versions.
+The SwiftPM root builds the app, CLI, daemon, helper and native installer worker. The source-testing opt-in uses pinned Swift Testing 6.2.4 and SwiftSyntax 602.0.0 to support Command Line Tools installations missing the bundled Testing module. Keep its scratch directory separate from other toolchain/macro versions. Packaging also uses a separate scratch directory for each architecture; a native-to-universal build sequence exposed a SwiftPM target-manifest collision when architecture caches were shared.
 
 UI smoke tests require a logged-in macOS desktop and exercise fixture windows, not real services. Their timeout detects the regression where writing unchanged observable preferences from `MenuBarExtra(isInserted:)` caused a main-menu graph loop. Eight PNG preview cases remain distinct from interaction testing.
 
@@ -59,6 +59,25 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 - Durable helper removal admission, owner/transaction cancellation, restart fencing, rollback failure visibility and same-user maintenance exclusion.
 - In explicitly opted-in disposable CI only, `python3 Tests/root_removal_smoke.py` checks root-owned ticket permissions with a temporary fixture. It does not register services or call power APIs.
 
+## Community package verification
+
+`InstalledComponentTrustTests` covers protected path traversal, root-owner enforcement, write ACLs, hard links, schema/role injection, native code-hash rejection, delegated removal, rollback, stale records and incomplete package transactions. The marker binds the complete canonical record, including hashes—not just a source revision. `ServiceRegistrationPolicyTests` distinguishes the observed pending-approval permission error from unrelated failures.
+
+`python3 Tests/community_package_smoke.py` builds an installer-required release bundle and verifies its exact component pins through the native verifier. It also supplies a wrong helper pin and requires rejection. It never installs or launches the community power path.
+
+For already-built distribution artifacts:
+
+```sh
+WAKELEASE_COMMUNITY_DIST=<artifact-directory> WAKELEASE_HEADLESS=1 \
+  python3 Tests/package_smoke.py
+```
+
+This checks all three pkg checksums, expands their contents into a temporary directory, verifies the common worker signature and architecture, checks shell syntax, compares pin records, verifies the app payloads, and checks the DMG checksum. It executes only the worker's read-only `verify` mode—not installer scripts—and never mounts the image.
+
+`installed-package-probe.yml` is separately approved **only on disposable GitHub macOS runners**. It uses the actual package builder and native installer scripts but substitutes harmless CLI-only binaries for all app/daemon/helper payloads. It refuses pre-existing product paths/receipts. Its scope is root-owned publication, denied user writes, exact installed identity, rejection while the dummy app is running, interrupted-install repair, delegated deletion and administrator approval-only removal. Cleanup checks the fixture's unique identity. No WakeLease power controller or real service registration is included; consult the exact run before claiming a scenario passed. Installer output uses `-verboseR -dumplog` to retain script diagnostics.
+
+These tests do not certify a downloaded/quarantined package's human Gatekeeper dialogs, approved product helper startup, real user-session lifecycle, or closed-lid behavior. Apple enrollment is not a prerequisite for those community-path tests; an approved separate Mac and any required human approvals are.
+
 ## Additional offline host and performance checks
 
 ```sh
@@ -73,7 +92,13 @@ The idle check measures only its owned simulation daemon through `proc_pidinfo`,
 
 ## Evidence recorded so far
 
-The expanded local suite now passes **552 Swift tests in 65 suites** in debug and release configurations, **five standalone XPC scenarios repeated across three fresh processes**, **28 CLI cases**, **eight Pi SDK lifecycle scenarios**, and **six native UI test methods** covering eight rendered previews plus accessibility-tree and 26 interaction checks. XPC transport checks moved out of the SwiftPM helper into the explicitly signed probe; two once-only callback unit tests were added. The packaged-preview argument guards and repository/lint checks also pass.
+The community-installation changes pass **576 Swift tests in 67 suites** locally in debug and release, plus **28 CLI cases**, **five standalone XPC scenarios across three fresh processes**, **eight offline Pi SDK lifecycle scenarios**, and the read-only community-bundle/distribution checks. The 24 added Swift cases cover installed component trust, package transactions/removal, service-approval error classification and read-only inspection of unset/malformed power preferences. A universal community DMG was built and its three package payloads, worker signatures, checksums and image integrity were inspected without installation.
+
+The native package lifecycle passed on **both architectures** at `b81238a` in [disposable package run 34912512996](https://github.com/ManagementMO/wakelease/actions/runs/34912512996). It verified the actual installer scripts against harmless stand-ins: activation, running-app refusal, interrupted-install repair, exact identity/impostor rejection, root-only writes, delegated deletion and administrator approval-only removal. Both hosts omitted the unset preference from `pmset -g` but exported an explicit live kernel `false`; no power setting was changed. All dummy app/approval files and package receipts created by the test were cleaned up. This is not full product service or physical sleep evidence.
+
+The regular **five-job CI matrix also passed at `b81238a`** in [run 34912513288](https://github.com/ManagementMO/wakelease/actions/runs/34912513288), including both full-Xcode builds, both architecture test executions, universal packaging and community artifact inspection. The CI-built community DMG was downloaded and its three packages, exact component records, worker signatures, architecture slices and checksums were reverified locally without installation.
+
+The prior native-UI checkpoint at `6bdb332` passed **six UI test methods** covering eight rendered previews, accessibility-tree checks and 26 interactions in debug/release. Those tests were not re-run by changing this Mac's system settings or interacting with real services during community-installer work. XPC transport checks remain in the explicitly signed standalone probe, not the SwiftPM toolchain helper. The packaged-preview argument guards and repository/lint checks also pass.
 
 The inherited baseline was **416 tests in 41 suites**. The earlier published CI checkpoint covered **550 Swift tests in 64 suites**, 28 CLI cases and packaging. All five jobs for `6303ec6` passed in [GitHub Actions run 34809565795](https://github.com/ManagementMO/wakelease/actions/runs/34809565795) on September 14, 2026; consult the current commit's CI run for subsequent additions:
 
@@ -99,11 +124,11 @@ Concurrent CLI latency is load-sensitive and includes process startup and persis
 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
-| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `6303ec6`; see the recorded CI checkpoint above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
-| Signed XPC authorization | Correct team/role accepted; wrong team, wrong role and unsigned peers rejected by the OS | Static-code tests, unsigned-start rejection and live anonymous NSXPC requirement enforcement covered. The positive transport fixture uses the test binary's own requirement; production-signed, cross-process product peers remain unverified |
-| Registration and approval | Fresh install, denial, approval, login and service restart | Not executed on the development Mac |
-| In-place upgrade | Coherent update, old callbacks, version mismatch, idle helper relaunch, rollback | Source/fake paths covered; signed live workflow unverified |
-| Uninstall | Active work paused, `SleepDisabled 0`, services/owned hooks/link removed, foreign edits preserved, coordinated multi-user removal | Coordinator/ownership fakes covered; live removal unverified |
+| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `b81238a` and the earlier checkpoints above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
+| Installed XPC authorization | Correct pinned code/role accepted; modified hashes, missing approval and wrong roles rejected; optional Developer ID team checks | Static-code, root-pin and anonymous NSXPC enforcement fixtures covered. Full cross-process product peers after administrator/service approval remain unverified |
+| Registration and approval | Fresh install, Gatekeeper/administrator decisions, denial, service approval, login and restart | Harmless disposable probes are separate evidence; the actual product was not installed on the development Mac |
+| Community upgrade/repair | Coherent complete-package replacement, inactive services, interrupted installation, wrong-build recovery and rollback | Protected transaction/record tests and read-only package inspection covered; full live product lifecycle remains unverified |
+| Uninstall | Active work paused, `SleepDisabled 0`, services/owned hooks/link and matching approval removed, foreign edits preserved, coordinated multi-user removal | Coordinator/ownership/pin-removal fixtures covered; real approved-product removal remains unverified |
 | Closed-lid work | Observable progress with no external display, on AC and battery | Requires explicit physical test |
 | Final release | Actual prompt closed-lid sleep, while preserving clamshell/external-display use | Fake policy checks only |
 | Crash/recovery | Daemon crash, helper crash, helper wedge, relaunch, interrupted clear | Simulated/fake coverage; physical verification required |

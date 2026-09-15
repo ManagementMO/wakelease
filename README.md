@@ -8,7 +8,7 @@ WakeLease is a native macOS menu-bar utility for local jobs, coding agents, buil
 
 It is an **MIT-licensed derivative of [Adrafinil](https://github.com/kageroumado/adrafinil)** by kageroumado and contributors. The upstream power-management work, helper architecture, monitors, and regression tests are the foundation—not inventions of this project. See [UPSTREAM.md](UPSTREAM.md) and [LICENSE](LICENSE). This is an independent project without upstream endorsement.
 
-> **Pre-release engineering build.** The CLI, broker, native UI, and production power path compile and pass automated checks on Apple Silicon/macOS 26 and Intel/macOS 15. Live production-signed XPC, service approval/update/uninstall, and physical closed-lid recovery remain release gates. No signed/notarized public WakeLease download or Homebrew cask is available from this checkout.
+> **Pre-release engineering build.** WakeLease has a no-membership community distribution path: a DMG containing an administrator-approved installer with exact, root-owned component code pins. No Apple Developer membership or custom trusted certificate is required. This is not notarized or hardware-certified; full product service approval/lifecycle and physical closed-lid recovery remain release gates. CI installer candidates are for review, not a supported public release or Homebrew cask.
 
 ## The model
 
@@ -22,7 +22,7 @@ It is an **MIT-licensed derivative of [Adrafinil](https://github.com/kageroumado
 
 ## Quick examples
 
-After installing a correctly signed app and approving its services:
+After administrator installation of the community package (or an authorized Developer ID build) and approval of its services:
 
 ```sh
 wakelease run -- npm run build
@@ -61,7 +61,7 @@ Installers preview intended changes, retain private backups, preserve foreign se
 
 - Runtime/build deployment floor: **macOS 15.4**. The retained isolated-deinitialization runtime is the reason for this floor; an older minimum would need a deliberate backport.
 - Swift **6.2 or newer**. Full Xcode is needed for the Xcode build/signing workflow. Command Line Tools can build the SwiftPM executables and development bundle.
-- Production power control requires an Apple-issued team signature and user-approved ServiceManagement registration. The root helper is not usable through an unsigned fallback.
+- Real power control requires either administrator-installed exact component pins or an authorized Apple-issued team signature, plus user-approved ServiceManagement registration. Merely claiming a product identifier, using a user-writable manifest, or wrapping a development build in a DMG cannot authorize the root helper.
 - Automated verification was run on Apple Silicon, macOS 26.6.2, with Apple Swift 6.3.3. This is not a claim of physical certification on every supported OS or architecture.
 
 ### Safe development loop
@@ -88,7 +88,22 @@ python3 Scripts/build-app.py --configuration debug \
   --bin-dir .build/source-testing/debug --output .build/WakeLease-dev.app
 ```
 
-That shortcut is ad-hoc-signed and deliberately cannot operate privileged services. For source-built, team-signed packages and notarization, use the [release procedure](Docs/RELEASING.md). The internal Xcode project/scheme still uses the upstream name to preserve history; it now builds WakeLease products and the new `WakeLeaseApp` sources.
+That shortcut does not create installation approval; unapproved development components cannot operate privileged services. The internal Xcode project/scheme still uses the upstream name to preserve history; it builds WakeLease products and the new `WakeLeaseApp` sources.
+
+### No-fee community DMG
+
+From a reviewed, clean checkout:
+
+```sh
+python3 Scripts/build-app.py --community --configuration release --sign - \
+  --arch arm64 --arch x86_64 --output .build/community/WakeLease.app
+python3 Scripts/build-community.py --app .build/community/WakeLease.app \
+  --output .build/community-downloads
+```
+
+These commands build artifacts only. The DMG contains **Install WakeLease.pkg**, **Repair Interrupted Install.pkg**, **Remove Installer Approval.pkg**, and instructions. The normal installer places the app at `/Applications/WakeLease.app` and approves its exact component hashes only after verification. You then launch the app and explicitly enable/approve its services.
+
+macOS may require per-installer first-launch approval because this path is not notarized. Do not disable Gatekeeper globally. Installer approval establishes local trust in the downloaded bytes; it is not an Apple publisher attestation. See [installation](Docs/INSTALLATION.md), [release procedure](Docs/RELEASING.md), and [verification limits](Docs/TESTING.md). Developer ID signing/notarization remains an optional separate route, not a prerequisite for the community package.
 
 ## Sleep safety
 
@@ -119,4 +134,4 @@ Uninstall first pauses admission and requires confirmed cleanup before removing 
 - [Release procedure](Docs/RELEASE.md) and [changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 
-WakeLease has no telemetry, automatic update feed, or normal-operation network dependency. Source lives at [ManagementMO/wakelease](https://github.com/ManagementMO/wakelease); private security reporting is enabled. Production signing, notarization, and physical release validation are still required before distributing a supported release.
+WakeLease has no telemetry, automatic update feed, or normal-operation network dependency. Source lives at [ManagementMO/wakelease](https://github.com/ManagementMO/wakelease); private security reporting is enabled. Full installed-product authorization, service lifecycle, accessibility and physical release validation remain required before a supported release. Apple enrollment is not required for the community distribution path.
