@@ -8,6 +8,8 @@ Read `UPSTREAM.md`. The repository preserves Adrafinil v1.7.0 history. Do not er
 
 Never run the real helper, register launch services, install agent hooks into the developer's home, change `pmset`, or put the host to sleep as part of automated tests. Use fake power controllers and temporary home directories. A physical closed-lid test needs explicit approval and a documented recovery procedure.
 
+The user requires **all further builds, tests and verification execution to run remotely, never on this computer**. Repository inspection/editing and Git/GitHub orchestration are allowed locally; do not run local lint, typechecks, builds, test scripts, app/preview processes, installers, UI automation, or power queries. Use disposable GitHub-hosted macOS runners for automated verification. Do not change their security permissions or run real power mutations merely to make a check pass.
+
 Production authorization must fail closed. Unsigned development must not weaken the root helper's caller checks. No telemetry or automatic network activity in ordinary operation. Do not log user reasons, command lines, repository paths, or hook payloads.
 
 ## Verification

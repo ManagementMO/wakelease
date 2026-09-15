@@ -51,13 +51,13 @@ def verify_no_write_access():
     raise AssertionError("The unprivileged runner can modify the trust record")
 
 
-def build_dummy_app(temporary, identifier, binary):
+def build_dummy_app(temporary, identifier, binary, variant="original"):
     app = temporary / "WakeLease.app"
     resources = app / "Contents/Resources"
     resources.mkdir(parents=True)
     info = {"CFBundleIdentifier": "org.wakelease", "CFBundleExecutable": "WakeLease", "CFBundleName": "WakeLease Harmless Package Probe",
             "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "CFBundleShortVersionString": "1.0.0", "LSUIElement": True,
-            "LSMinimumSystemVersion": "15.4", "WakeLeaseFixtureID": identifier}
+            "LSMinimumSystemVersion": "15.4", "WakeLeaseFixtureID": identifier, "WakeLeaseFixtureRevision": variant}
     (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
     build = {"version": "1.0.0", "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
              "dirty": False, "configuration": "release", "developmentOnly": False, "requiresInstallerApproval": True}
@@ -97,6 +97,13 @@ def main():
         distribution = temporary / "distribution"
         subprocess.run(["python3", str(ROOT / "Scripts/build-community.py"), "--app", str(app), "--output", str(distribution), "--no-dmg"], check=True, timeout=900)
         package = distribution / "Install WakeLease.pkg"
+        replacement_app = build_dummy_app(temporary / "replacement", identifier, binary, variant="replacement")
+        replacement_distribution = temporary / "replacement-distribution"
+        subprocess.run(["python3", str(ROOT / "Scripts/build-community.py"), "--app", str(replacement_app), "--output", str(replacement_distribution), "--no-dmg"], check=True, timeout=900)
+        original_record = json.loads((distribution / "components.json").read_text())
+        replacement_record = json.loads((replacement_distribution / "components.json").read_text())
+        if original_record["build"] != replacement_record["build"] or original_record["hashes"] == replacement_record["hashes"]:
+            raise AssertionError("The upgrade fixture must change code hashes without changing the source revision")
         subprocess.run(["/usr/bin/pmset", "-g"], check=True, timeout=10)
         registry = plistlib.loads(subprocess.check_output(["/usr/sbin/ioreg", "-r", "-c", "IOPMrootDomain", "-d", "1", "-a"], timeout=10))
         print("Read-only kernel SleepDisabled:", registry[0].get("SleepDisabled", "not exported"), flush=True)
@@ -131,8 +138,30 @@ def main():
                 raise AssertionError("Expected exactly one native installer worker in the package")
             subprocess.run(["sudo", "-n", str(workers[0]), "preflight", "/"], check=True, timeout=30)
             subprocess.run([str(executable), "absent"], check=True, timeout=10)
+            marker = (DESTINATION / "installation.pending").read_bytes()
+            damaged = APPLICATION / "Contents/Library/LaunchDaemons/WakeLeaseHelper"
+            subprocess.run(["sudo", "-n", "codesign", "--force", "--sign", "-", "--identifier", "org.wakelease.helper", "--options", "hard,runtime", str(damaged)], check=True, timeout=15)
+            rejected = subprocess.run(["sudo", "-n", str(workers[0]), "activate", "/"], capture_output=True, timeout=30)
+            if rejected.returncode == 0 or (DESTINATION / "installation.pending").read_bytes() != marker:
+                raise AssertionError("A damaged payload was activated or lost its admission fence")
+            subprocess.run([str(executable), "absent"], check=True, timeout=10)
+            rejected = subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(replacement_distribution / "Repair Interrupted Install.pkg"), "-target", "/"], capture_output=True, timeout=90)
+            if rejected.returncode == 0 or (DESTINATION / "installation.pending").read_bytes() != marker:
+                raise AssertionError("A different build repaired or cancelled the pending transaction")
+            if json.loads((DESTINATION / "components.json").read_text()) != original_record:
+                raise AssertionError("Failed activation or wrong-build repair replaced the previous approval")
             subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(distribution / "Repair Interrupted Install.pkg"), "-target", "/"], check=True, timeout=90)
             subprocess.run([str(executable), "installed"], check=True, timeout=10)
+            print("Damaged payload and wrong-build repair rejected; matching repair restored approval", flush=True)
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(replacement_distribution / "Install WakeLease.pkg"), "-target", "/"], check=True, timeout=90)
+            subprocess.run([str(APPLICATION / "Contents/MacOS/WakeLease"), "installed"], check=True, timeout=10)
+            subprocess.run([str(executable), "absent"], check=True, timeout=10)
+            if json.loads((DESTINATION / "components.json").read_text()) != replacement_record:
+                raise AssertionError("Upgrade did not publish the replacement component approval")
+            subprocess.run(["sudo", "-n", "installer", "-verboseR", "-dumplog", "-pkg", str(package), "-target", "/"], check=True, timeout=90)
+            subprocess.run([str(executable), "installed"], check=True, timeout=10)
+            subprocess.run([str(replacement_app / "Contents/MacOS/WakeLease"), "absent"], check=True, timeout=10)
+            print("Changed-build upgrade and rollback revoked stale app copies", flush=True)
             impostor = temporary / "impostor"
             shutil.copy2(binary, impostor)
             subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", "org.wakelease", "--options", "runtime", str(impostor)], check=True, timeout=10)

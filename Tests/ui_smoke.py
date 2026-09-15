@@ -11,6 +11,17 @@ import uuid
 
 
 class NativeUISmoke(unittest.TestCase):
+    def record_artifact(self, name, data):
+        selected = os.environ.get("WAKELEASE_UI_ARTIFACT_DIR")
+        if not selected:
+            return
+        root = Path(__file__).resolve().parents[1]
+        directory = Path(selected).resolve()
+        if os.environ.get("CI") != "true" or not directory.is_relative_to(root / ".build"):
+            raise RuntimeError("UI evidence capture is restricted to the disposable CI build directory")
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_bytes(data)
+
     def audit(self, surface="custom-integration", mode="inspect", executable=None):
         root = Path(__file__).resolve().parents[1]
         executable = executable or Path(os.environ.get("WAKELEASE_BIN_DIR", root / ".build/source-testing/debug")) / "WakeLeaseMenu"
@@ -20,6 +31,7 @@ class NativeUISmoke(unittest.TestCase):
         try:
             result = subprocess.run(["swift", str(root / "Tests/ui_accessibility.swift"), str(process.pid), str(executable), clipboard, mode],
                                     capture_output=True, text=True, timeout=60)
+            self.record_artifact(surface + "-" + mode + ".log", (result.stdout + result.stderr).encode())
             if result.returncode == 77:
                 if os.environ.get("WAKELEASE_REQUIRE_UI_AUDIT") == "1":
                     self.fail(result.stderr.strip())
@@ -99,6 +111,7 @@ class NativeUISmoke(unittest.TestCase):
                     self.assertGreaterEqual(width, 300)
                     self.assertGreaterEqual(height, 250)
                     self.assertGreater(len(data), 5000)
+                    self.record_artifact(image.name, data)
 
 
 if __name__ == "__main__":

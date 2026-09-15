@@ -108,6 +108,37 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  preview:
+    name: Remote native previews (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    env:
+      WAKELEASE_SOURCE_TESTING: "1"
+      WAKELEASE_UI_ARTIFACT_DIR: .build/ui-evidence
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Select the disposable toolchain
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+          sw_vers
+          xcodebuild -version
+      - name: Build preview-only application
+        run: swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseMenu
+      - name: Render previews and audit with existing permissions only
+        run: python3 Tests/ui_smoke.py
+      - name: Retain preview evidence and permission limitations
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: WakeLease-remote-ui-${{ matrix.runner }}
+          path: .build/ui-evidence/
+          retention-days: 7
+          if-no-files-found: warn
+
   build:
     name: Full unsigned Xcode build (${{ matrix.runner }})
     strategy:
