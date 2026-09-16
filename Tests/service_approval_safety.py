@@ -2,9 +2,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
+sys.dont_write_bytecode = True
 
 import service_approval_probe as probe
 
