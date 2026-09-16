@@ -110,14 +110,12 @@ def status(root):
 
 
 def cleanup(root):
-    try:
-        result = run_app(root, "cleanup", "cleanup")
-        result["startup"] = evidence(root)
-        if not result["cleanupOK"]:
-            raise SystemExit("Dummy service cleanup did not reach notRegistered: " + json.dumps(result, sort_keys=True))
-        return result
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
+    result = run_app(root, "cleanup", "cleanup")
+    result["startup"] = evidence(root)
+    if not result["cleanupOK"]:
+        raise SystemExit("Dummy service cleanup did not reach notRegistered: " + json.dumps(result, sort_keys=True))
+    shutil.rmtree(root)
+    return result
 
 
 def main():
