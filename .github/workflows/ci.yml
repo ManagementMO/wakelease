@@ -41,7 +41,10 @@ jobs:
           xcodebuild -version
           swift --version
       - name: Diagnostic cleanup preserves recovery after failures
-        run: python3 Tests/service_approval_safety.py
+        run: |
+          python3 Tests/service_approval_safety.py
+          git status --short --untracked-files=all
+          test -z "$(git status --porcelain --untracked-files=all)"
       - name: Swift invariants and fake controllers
         env:
           WAKELEASE_SOURCE_TESTING: "1"
