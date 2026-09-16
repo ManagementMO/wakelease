@@ -40,6 +40,8 @@ jobs:
           uname -m
           xcodebuild -version
           swift --version
+      - name: Diagnostic cleanup preserves recovery after failures
+        run: python3 Tests/service_approval_safety.py
       - name: Swift invariants and fake controllers
         env:
           WAKELEASE_SOURCE_TESTING: "1"
