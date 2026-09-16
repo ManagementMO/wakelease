@@ -46,6 +46,10 @@ jobs:
         env:
           WAKELEASE_SOURCE_TESTING: "1"
         run: swift test --scratch-path .build/source-testing --disable-xctest --disable-experimental-prebuilts
+      - name: Optimized Swift invariants and fake controllers
+        env:
+          WAKELEASE_SOURCE_TESTING: "1"
+        run: swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts
       - name: Root-owned removal ticket permissions in a disposable directory
         env:
           WAKELEASE_ROOT_FIXTURE: "1"
@@ -69,6 +73,15 @@ jobs:
         run: |
           python3 Scripts/install-host-fixtures.py
           python3 Tests/pi_host_smoke.py
+      - name: Optimized CLI, XPC, offline host and idle checks
+        env:
+          WAKELEASE_BIN_DIR: .build/source-testing/release
+          WAKELEASE_REQUIRE_PI_HOST: "1"
+        run: |
+          python3 Tests/cli_integration.py
+          python3 Tests/xpc_smoke.py
+          python3 Tests/pi_host_smoke.py
+          python3 Tests/idle_smoke.py
       - name: Disposable ad-hoc bundle and privileged-mode refusal
         env:
           WAKELEASE_HEADLESS: "1"
@@ -82,7 +95,7 @@ jobs:
         run: |
           python3 Scripts/build-app.py --community --configuration release --sign - --arch arm64 --arch x86_64 --output .build/community/WakeLease.app
           python3 Scripts/build-community.py --app .build/community/WakeLease.app --output .build/community-distribution
-          WAKELEASE_COMMUNITY_DIST=.build/community-distribution WAKELEASE_HEADLESS=1 python3 Tests/package_smoke.py
+          WAKELEASE_COMMUNITY_DIST=.build/community-distribution WAKELEASE_REQUIRE_UNIVERSAL_DMG=1 WAKELEASE_HEADLESS=1 python3 Tests/package_smoke.py
       - name: Strict C syntax
         run: clang -fsyntax-only -Wall -Wextra -Werror -I AdrafinilShared/Sources/WakeLeaseProcess/include AdrafinilShared/Sources/WakeLeaseProcess/WakeLeaseProcess.c AdrafinilShared/Sources/WakeLeaseProcess/BoundedProcess.c AdrafinilShared/Sources/WakeLeaseProcess/RemovalPermissions.c
       - name: Native accessibility harness typecheck
@@ -132,6 +145,12 @@ jobs:
         run: swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseXPCProcessProbe
       - name: Verify exact role and hash requirements between processes
         run: python3 Tests/xpc_process_smoke.py
+      - name: Build optimized cross-process fixture
+        run: swift build --scratch-path .build/source-testing --configuration release --disable-experimental-prebuilts --product WakeLeaseXPCProcessProbe
+      - name: Verify optimized cross-process requirements
+        env:
+          WAKELEASE_BIN_DIR: .build/source-testing/release
+        run: python3 Tests/xpc_process_smoke.py
 
   preview:
     name: Remote native previews (${{ matrix.runner }})
@@ -143,7 +162,8 @@ jobs:
     timeout-minutes: 15
     env:
       WAKELEASE_SOURCE_TESTING: "1"
-      WAKELEASE_UI_ARTIFACT_DIR: .build/ui-evidence
+      WAKELEASE_REQUIRE_UI_AUDIT: "1"
+      WAKELEASE_UI_ARTIFACT_DIR: .build/ui-evidence/debug
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Select the disposable toolchain
@@ -155,6 +175,13 @@ jobs:
         run: swift build --scratch-path .build/source-testing --disable-experimental-prebuilts --product WakeLeaseMenu
       - name: Render previews and audit with existing permissions only
         run: python3 Tests/ui_smoke.py
+      - name: Build optimized preview-only application
+        run: swift build --scratch-path .build/source-testing --configuration release --disable-experimental-prebuilts --product WakeLeaseMenu
+      - name: Audit optimized native UI with existing permissions only
+        env:
+          WAKELEASE_BIN_DIR: .build/source-testing/release
+          WAKELEASE_UI_ARTIFACT_DIR: .build/ui-evidence/release
+        run: python3 Tests/ui_smoke.py
       - name: Retain preview evidence and permission limitations
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -163,6 +190,25 @@ jobs:
           path: .build/ui-evidence/
           retention-days: 7
           if-no-files-found: warn
+
+  artifact_roundtrip:
+    name: Verify downloaded universal installer artifact
+    needs: test
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Download this run's community installer candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: WakeLease-community-installer-preview
+          path: .build/downloaded-community
+          digest-mismatch: error
+      - name: Reverify downloaded signatures, provenance, slices and checksums
+        env:
+          WAKELEASE_COMMUNITY_DIST: .build/downloaded-community
+          WAKELEASE_REQUIRE_UNIVERSAL_DMG: "1"
+        run: python3 Tests/package_smoke.py CommunityArtifactSmoke
 
   build:
     name: Full unsigned Xcode build (${{ matrix.runner }})

@@ -10,7 +10,7 @@ import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / ".build/source-testing/debug/WakeLeaseXPCProcessProbe"
+BIN = Path(os.environ.get("WAKELEASE_BIN_DIR", ROOT / ".build/source-testing/debug")) / "WakeLeaseXPCProcessProbe"
 
 
 def remote_fixture_mode():

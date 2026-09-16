@@ -45,6 +45,9 @@ class CommunityArtifactSmoke(unittest.TestCase):
     def test_packages_preserve_exact_verified_payloads_and_checksums(self):
         distribution = Path(os.environ["WAKELEASE_COMMUNITY_DIST"]).resolve()
         expected = json.loads((distribution / "components.json").read_text())
+        require_universal = os.environ.get("WAKELEASE_REQUIRE_UNIVERSAL_DMG") == "1"
+        if os.environ.get("GITHUB_SHA"):
+            self.assertEqual(expected["build"], os.environ["GITHUB_SHA"])
         worker_hash = None
         with tempfile.TemporaryDirectory(prefix="wakelease-artifact-inspection-") as temporary:
             for index, name in enumerate(["Install WakeLease.pkg", "Repair Interrupted Install.pkg", "Remove Installer Approval.pkg"]):
@@ -65,6 +68,8 @@ class CommunityArtifactSmoke(unittest.TestCase):
                 self.assertEqual(json.loads(manifest.read_text()), expected)
                 architectures = set(subprocess.check_output(["lipo", "-archs", str(worker)], text=True, timeout=10).split())
                 self.assertTrue(architectures and architectures <= {"arm64", "x86_64"})
+                if require_universal:
+                    self.assertEqual(architectures, {"arm64", "x86_64"})
                 for script in [worker.with_name("preinstall"), worker.with_name("postinstall")]:
                     if script.exists():
                         subprocess.run(["/bin/sh", "-n", str(script)], check=True, timeout=5)
@@ -73,10 +78,18 @@ class CommunityArtifactSmoke(unittest.TestCase):
                 if apps:
                     app = apps[0]
                     self.assertTrue((app / "Contents/Resources/LICENSE").is_file())
+                    build = json.loads((app / "Contents/Resources/WakeLeaseBuild.json").read_text())
+                    self.assertEqual(build["commit"], expected["build"])
+                    self.assertEqual(build["configuration"], "release")
+                    self.assertFalse(build["dirty"])
+                    self.assertFalse(build["developmentOnly"])
+                    self.assertTrue(build["requiresInstallerApproval"])
                     actual = set(subprocess.check_output(["lipo", "-archs", str(app / "Contents/MacOS/WakeLease")], text=True, timeout=10).split())
                     self.assertEqual(actual, architectures)
                     subprocess.run([str(worker), "verify", str(app), str(manifest)], check=True, timeout=30)
         image = distribution / "WakeLease.dmg"
+        if require_universal:
+            self.assertTrue(image.is_file(), "The downloadable universal DMG is required")
         if image.exists():
             digest = hashlib.sha256(image.read_bytes()).hexdigest()
             self.assertEqual(image.with_suffix(".dmg.sha256").read_text(), digest + "  " + image.name + "\n")
