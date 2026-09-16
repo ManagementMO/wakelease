@@ -1,5 +1,7 @@
 # WakeLease cloud macOS validation handoff
 
+This document preserves the original handoff and subsequent cloud results. The embedded-service XPC failure below is historical and was resolved by the Mach-listener fixture. For current verification, cleanup recovery and artifact status, use `Docs/TESTING.md` and the exact commit's CI results rather than the original failing checkpoint.
+
 ## Task
 
 Continue the verification work on a confirmed Devin-owned macOS VM. Fix the remaining cross-process XPC fixture failure, complete all safe remote verification, attempt the explicitly approved harmless background-helper approval/startup test, and report precisely what is proven and what still needs a human or physical MacBook. Keep work on `verify/remote-validation` until the full relevant checks pass.
@@ -10,9 +12,9 @@ The user explicitly requested this cloud Mac handoff. Do not run project code on
 
 - Repository: https://github.com/ManagementMO/wakelease
 - Working branch: `verify/remote-validation`
-- Latest code checkpoint before this handoff document: `42149a22c4123dfc2203d598289d6fdc5a364e03`
-- Stable `main`: `87819c3302aacc95888c596c8372794ad56ddab6`
-- The verification branch is already pushed. `main` has NOT received the new test fixture or its currently failing positive control.
+- Original code checkpoint before this handoff document: `42149a22c4123dfc2203d598289d6fdc5a364e03`
+- Original stable `main` baseline: `87819c3302aacc95888c596c8372794ad56ddab6`
+- At handoff, the verification branch was pushed but `main` had not received the new fixture. The positive-control failure was subsequently resolved. Check the current branch/CI metadata before continuing work.
 - Read `AGENTS.md` and `UPSTREAM.md`. Preserve upstream MIT attribution, project format 77, the macOS 15.4 deployment floor, signing checks and existing comments.
 
 ## Environment and permission boundaries
@@ -82,7 +84,7 @@ All work ran on the Devin Cloud VM; nothing ran on the user's computer.
 - Cross-process XPC fixture **fixed** in `463ef29`: root cause was `NSXPCListener.service()` + `setConnectionCodeSigningRequirement` (SDK: anonymous/Mach-service listeners only). The fixture now uses a temporary user-domain Mach service with the production listener shape. All five cases passed on the VM: valid reply from a separate PID / UID 501 with `accepted == 1`, `calls == 1`, `peerIdentityMatched`; listener role/hash rejected with zero admissions; server role/hash rejected the reply. Requirements were not weakened.
 - Dummy approval/startup experiment **implemented and attempted** in `7c5a8c4` (`Tests/service_approval_probe.py`). Agent + daemon fixture: agent started under launchd (parent PID 1, UID 501) and daemon registration returned operation-not-permitted with `requiresApproval`; the grouped Login Items row prompted for an **administrator password**, so the attempt stopped there (cancelled, nothing entered). Agent-only fixture: `enabled` and started with no prompt. Both fixtures cleaned to `notRegistered`, rows gone after reopening Settings. Daemon approval therefore remains a documented limitation.
 - Passed on the VM: `swift test` debug and release (576 tests / 67 suites each), 28 CLI cases, `xpc_smoke`, `xpc_process_smoke`, `lint`, `release_tools`, `check-repository`, `ui_smoke` (6 methods, no skips) and `WAKELEASE_REQUIRE_UI_AUDIT=1 ui_smoke`.
-- Not possible from the VM: `gh`/GitHub API were unauthenticated (rate-limited anonymously), so `workflow_dispatch` for `ci.yml`/`installed-package-probe.yml` could not be issued from the shell. `ci.yml` also runs on `pull_request`; opening the PR from this branch is the authoritative way to run `process_xpc` on both GitHub architectures. `installed-package-probe.yml` must still be dispatched by a human (its inputs did not change after run 34931435762).
+- At the cloud session checkpoint, `gh`/GitHub API were unauthenticated there, so the VM could not dispatch workflows. The authenticated CLI subsequently triggered both workflows remotely: regular CI run 35038026936 and installer run 35038028016 passed at `fb86978`. A PR is not required for manual `workflow_dispatch`. Later cleanup and release-mode/artifact verification checkpoints are recorded in `Docs/TESTING.md`.
 
 ## Previously failing work: cross-process XPC fixture (resolved, kept for history)
 
@@ -92,30 +94,30 @@ Relevant commits:
 - `26bf44d` — implemented an application-scoped embedded XPC service, actual separate-process echo, role/hash requirements built through `InstalledComponentTrust`, and journaled listener admission/call counts.
 - `42149a2` — fixed a compiler-reproduced Swift 6 error by explicitly marking the lock mutation callback `@Sendable`. No compiler or signing checks were weakened.
 
-Latest run:
+Historical failing run at `42149a2`:
 
 https://github.com/ManagementMO/wakelease/actions/runs/35006728359
 
-The fixture NOW COMPILES on both platforms, but its VALID positive round-trip is rejected. Four negative cases report rejection, yet they MUST NOT be counted as meaningful authorization proof until the positive control works.
+At this checkpoint the fixture compiled on both platforms, but its valid positive round-trip was rejected. The four negative results from that broken checkpoint were not meaningful authorization proof. The subsequent Mach-listener fix restored the positive control and retained the negative role/hash cases.
 
 Observed on both architectures:
 
 - `test_exact_component_requirement_accepts_a_separate_peer` fails at `Tests/xpc_process_smoke.py` asserting `report["outcome"] == "reply"`; actual outcome is `"rejected"`.
 - Negative cases report `errorCode: 4097`, `accepted: 0`, `calls: 0`, a separate nonzero service PID and UID 501.
-- Current Python code prints a report only after assertions; add targeted failure diagnostics so the positive report and service-side startup/requirement errors are retained.
-- The service writes its initial journal BEFORE building the parent requirement and resuming the listener. A journal with zero calls does not prove the service reached listener resume. Trace that boundary instead of assuming the root cause.
-- The positive failure is not yet established as a production trust bug; it may be in the new embedded-service fixture or its assumptions. Investigate first. Do not remove role/hash checks, accept timeouts, or drop the positive test to turn CI green.
+- The original Python fixture printed its report only after assertions. The fix added failure-path reports and service-side startup/requirement-stage diagnostics.
+- The original service wrote its initial journal before building the parent requirement. That did not prove it reached listener resume. The corrected tests require the listening stage and no server failure.
+- Investigation established an unsupported fixture listener, not a need to weaken production trust. Do not remove role/hash checks, accept timeouts, or drop a positive control to turn CI green.
 
 Failed job IDs for detailed logs:
 
 - Intel: `104508242950`
 - Apple Silicon: `104508242954`
 
-The fixture uses one temporary `Client.app` with `Contents/XPCServices/Probe.xpc`, proper `APPL`/`XPC!` metadata, ad-hoc hardened-runtime signatures and empty entitlements. It connects with `NSXPCConnection(serviceName:)`, listens with `NSXPCListener.service()`, and builds in-memory exact requirements through `InstalledComponentTrust`. This checks transport/requirement construction; protected root-record ownership is covered separately by the package test. It is not the product's privileged helper or ServiceManagement approval workflow.
+The historical fixture used a temporary `Client.app` with `Contents/XPCServices/Probe.xpc` and the unsupported service-listener combination. It was replaced by separately signed `Client.app` and `Service.app` bundles communicating through a temporary user-domain Mach service. Protected root-record ownership remains covered separately by the package test; this fixture is not the product's privileged helper or ServiceManagement approval workflow.
 
 ## Relevant files
 
-- `Tests/XPCProcessProbe/XPCProcessEntry.swift` — current cross-process fixture and positive-control failure. Test-only executable target; no power mutations.
+- `Tests/XPCProcessProbe/XPCProcessEntry.swift` — corrected cross-process Mach-listener fixture with positive/negative controls and stage diagnostics. Test-only executable target; no power mutations.
 - `Tests/xpc_process_smoke.py` — builds temporary signed app/service bundles and asserts positive peer PID/UID plus wrong-role/hash rejection.
 - `Package.swift` — adds `WakeLeaseXPCProcessProbe` only when `WAKELEASE_SOURCE_TESTING=1`.
 - `Tests/XPCBoundaryProbe/XPCBoundaryProbe.swift` and `Tests/xpc_smoke.py` — existing same-process anonymous XPC controls, useful reference but not a replacement for the new positive test.
@@ -126,11 +128,13 @@ The fixture uses one temporary `Client.app` with `Contents/XPCServices/Probe.xpc
 - `Tests/ui_accessibility.swift` — existing trusted-AX audit; verifies the exact preview process and uses a separate test pasteboard.
 - `.github/workflows/ci.yml` — regular matrix plus `preview` and `process_xpc` jobs on `macos-26` and `macos-15-intel`.
 - `.github/workflows/installed-package-probe.yml` — manually dispatched privileged dummy-package test only.
-- `Tests/ServiceRegistrationProbe/ProbeMain.swift` — currently registers and immediately unregisters dummy services. No approval-wait workflow exists yet.
-- `Tests/ServiceRegistrationProbe/HarmlessHelper.swift` — currently prints that it performs no power operations, then exits.
+- `Tests/ServiceRegistrationProbe/ProbeMain.swift` — dummy register/register-agent/status/cleanup modes; the original probe mode still unregisters in the same run.
+- `Tests/ServiceRegistrationProbe/HarmlessHelper.swift` — records scoped startup PID/UID evidence and exits; no power operations.
+- `Tests/service_approval_probe.py` — guarded dummy approval orchestration and recoverable cleanup.
+- `Tests/service_approval_safety.py` — six remote-only cleanup recovery regressions with disposable files and a simulated native boundary.
 - `Tests/service_registration_probe.py` — existing dummy app builder and registration runner. Its self-issued-certificate branch is NOT the selected path.
 - `.github/workflows/service-registration-probe.yml` — WARNING: its existing matrix includes `self-issued` and certificate trust flags. Do not dispatch it unchanged for this new approval test. Use an explicitly ad-hoc-only path or a separately guarded fixture.
-- `Docs/TESTING.md`, `Docs/INSTALLATION.md`, `Docs/RELEASING.md`, `Docs/THREAT_MODEL.md`, `Docs/HARDWARE_TESTS.md` — evidence, release gates, security constraints and human-only cases. They still mostly describe the stable `87819c3` checkpoint and need final updates after new validation.
+- `Docs/TESTING.md`, `Docs/INSTALLATION.md`, `Docs/RELEASING.md`, `Docs/THREAT_MODEL.md`, `Docs/HARDWARE_TESTS.md` — current and historical evidence, release gates, security constraints and human-only cases. Keep exact checkpoint references distinct from the current branch.
 
 ## Dummy approval/startup test (implemented; daemon approval blocked at the administrator prompt)
 
@@ -159,12 +163,12 @@ No new project dependency was added in this round. Preserve pinned dependencies 
 ## Acceptance criteria
 
 - [x] Execution placement is verified as an isolated cloud Mac, with no path back to the user's personal computer.
-- [x] Cross-process positive echo proves a separate PID and expected UID; wrong role/hash cases reject for the intended reason (VM; confirm both GitHub architectures on the PR's `process_xpc` jobs).
-- [ ] Expanded package damage/repair/upgrade/rollback tests remain green on both GitHub macOS architectures (last green: run 34931435762; a re-dispatch of `installed-package-probe.yml` needs an authenticated human).
+- [x] Cross-process positive echo proves a separate PID and expected UID; wrong role/hash cases reject for the intended reason. Both configurations are now included in the remotely dispatched `process_xpc` jobs.
+- [x] Expanded package damage/repair/upgrade/rollback tests were re-dispatched through authenticated GitHub orchestration and passed on both architectures, including run 35123006889. Recheck the intended final revision rather than relying on an older checkpoint.
 - [x] Native preview and interaction checks run remotely; no skips on the VM.
 - [x] Approved dummy-helper Settings approval/startup is attempted with precise targeting, credential-stop handling and cleanup. Agent approved/started; daemon approval stopped at the administrator password prompt.
-- [x] All relevant debug/release tests, lint and repository checks pass on the VM for the final code; GitHub CI for the final commit is tracked on the PR.
-- [x] Commit and push verified changes; `main` unchanged at `87819c3`; no force-push or history rewrite.
+- [x] The cloud session recorded passing debug/release tests, lint and repository checks for its checkpoint. Subsequent full remote CI and downloaded-artifact checks are required for each final revision; no PR is necessary to dispatch them.
+- [x] Cloud changes were committed and pushed without force-pushing or rewriting history. Only advance `main` after the intended revision's required remote checks pass.
 - [x] Remaining physical MacBook, human accessibility, provider/account, exact macOS 15.4 and supported-publication prerequisites are recorded in `Docs/TESTING.md` and `Docs/HARDWARE_TESTS.md` without requiring paid Apple enrollment.
 
 ## Cloud handoff placement reference

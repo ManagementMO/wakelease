@@ -33,6 +33,9 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 - Service registration presents the observed permission error as pending only when macOS actually reports `requiresApproval`; unrelated failures stay visible.
 - Architecture-specific packaging caches prevent a native-to-universal SwiftPM build-manifest collision without changing signing or deployment settings.
 - Read-only power inspection handles an omitted, unset `SleepDisabled` preference only when an explicit kernel boolean is available; unknown/malformed state and conflicting blocking values still fail closed.
+- The cloud approval diagnostic retains its recovery files after failed unregistration, timeout, missing reports or unreadable evidence. Filesystem-removal failures are no longer silently reported as successful cleanup.
+- The separate-process XPC fixture uses a temporary user-domain Mach listener, the supported listener type for its exact code-signing requirement, rather than an embedded-service listener that rejected the positive control.
+- The Pi SDK fixture resolves a relative binary-directory override before switching to its disposable workspace, so optimized tests invoke the intended CLI rather than fail with a missing executable.
 
 ### Security and privacy
 
@@ -44,7 +47,7 @@ All changes below are unreleased engineering work. Product version `0.1.0` is no
 
 - Automated tests and simulation exercise the lease, transport, installer, command and power-coordination boundaries without changing host sleep settings.
 - CI verifies full unsigned Xcode builds and actual Swift/CLI/host-fixture execution on Apple Silicon/macOS 26 and Intel/macOS 15, including root-owned temporary ticket permissions and universal development packaging.
-- Local debug and optimized release suites pass 576 Swift tests plus five standalone XPC scenarios across three fresh explicitly ad-hoc-signed probe processes and 28 CLI cases. Pi's real SDK covers eight offline success/failure/cancellation/retry/queue scenarios. Community bundles and all three package payloads receive read-only signature/hash/architecture/checksum verification.
+- Remote debug and optimized release coverage includes 576 Swift tests, 28 CLI cases, six diagnostic cleanup regressions, the five anonymous XPC scenarios across three fresh processes, and five separate-process role/hash cases. Pi's real SDK covers eight offline success/failure/cancellation/retry/queue scenarios. The uploaded community artifact is downloaded onto another remote Mac and checked for exact-commit clean release provenance, universal slices, signatures and checksums.
 - Native accessibility, keyboard and layout checks cover 26 preview interactions using a separate clipboard and existing permission only, including hidden-icon close/reopen through macOS, maximum recipe content and invalid-input recovery. Live anonymous NSXPC fixtures verify listener rejection before the delegate and client reply rejection without registering services.
 - Disposable macOS CI executes the real installer, repair and approval-removal scripts against harmless stand-in binaries, including running-app refusal, exact identity rejection and delegated read/delete-only cleanup. It never runs the product power controller.
 - The Xcode project retains compatible format 77 without relaxing deployment or signing settings. CI artifacts use a pinned Node 24 uploader and fail if expected outputs are absent.

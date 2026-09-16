@@ -27,7 +27,7 @@ This shortcut produces an ad-hoc-signed bundle whose privileged services intenti
 
 ## Primary path: no-fee community installer
 
-Run safe tests and lint, commit the reviewed work, and start from a clean checkout. Choose new output paths; builders refuse existing artifacts rather than deleting them.
+Run safe tests and lint on an approved remote Mac, commit the reviewed work, and start from a clean checkout there. The user's personal computer is excluded from build and verification execution. Choose new output paths; builders refuse existing artifacts rather than deleting them.
 
 ```sh
 python3 Scripts/build-app.py --community --configuration release --sign - \
@@ -47,15 +47,15 @@ The install package places the app at `/Applications/WakeLease.app`. Its adminis
 Inspect artifacts without installing or mounting them:
 
 ```sh
-WAKELEASE_COMMUNITY_DIST=.build/community-downloads WAKELEASE_HEADLESS=1 \
-  python3 Tests/package_smoke.py
+WAKELEASE_COMMUNITY_DIST=.build/community-downloads WAKELEASE_REQUIRE_UNIVERSAL_DMG=1 \
+  python3 Tests/package_smoke.py CommunityArtifactSmoke
 ```
 
 This expands packages in a disposable directory, verifies checksums and worker signatures, checks script syntax, compares component records, validates both app payloads through the native read-only verifier, and verifies the DMG checksum. It never executes package pre/post-install scripts. The separate, explicitly approved `installed-package-probe.yml` executes those scripts only on disposable CI with harmless substitute binaries, not the real power controller.
 
 Community artifacts are **not notarized** and carry no Apple publisher attestation. Users may need macOS's per-installer approval. Do not disable Gatekeeper/SIP or require a custom trusted root certificate. Administrator approval establishes local trust in the selected bytes; protect the download origin and publish checksums and provenance. Full product XPC/service approval and physical MacBook checks still apply before a supported release: disposable fixtures have shown separate-process pinned XPC acceptance/rejection and that the helper's Login Items approval prompts for an administrator password (see [TESTING.md](TESTING.md)), but no fixture stands in for the installed product's approved helper start. `developmentOnly: false` with `requiresInstallerApproval: true` is not hardware certification or permission to bypass those gates.
 
-CI retains `WakeLease-community-installer-preview` for review; artifact retention is not a supported release announcement. Builders and CI do not publish a GitHub release automatically.
+CI retains `WakeLease-community-installer-preview` for seven days and re-downloads it onto a separate remote Mac for signature, exact-commit provenance, universal-slice and checksum verification. A transport digest mismatch is a failure, not a warning. Retain the final candidate before CI artifact expiration. Artifact retention is not a supported release announcement; builders and CI do not publish a GitHub release automatically.
 
 ## Optional path: Developer ID distribution
 

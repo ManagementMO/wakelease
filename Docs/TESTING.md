@@ -1,5 +1,7 @@
 # Verification and release gates
 
+This verification campaign excludes the user's personal computer. Builds, tests, lint, native UI execution, installers and power inspection run only in explicitly approved remote environments. Repository editing and remote Git/GitHub orchestration are not permission to execute project code locally. CI-only fixtures retain their explicit opt-ins.
+
 ## Safe automated suite
 
 ```sh
@@ -26,7 +28,7 @@ The native accessibility client uses the existing macOS Accessibility permission
 
 The suite also retains the stale “Copied” feedback regression: changing recipe options clears only the feedback, not the clipboard. All of these checks use preview data and do not certify real service approval or physical sleep.
 
-Use `WAKELEASE_REQUIRE_UI_AUDIT=1 python3 Tests/ui_smoke.py` to require those native audits rather than skip when permission is unavailable. CI typechecks the audit client but does not claim headless interactive execution. This is not a manual VoiceOver, large-text or live service-approval certification.
+Use `WAKELEASE_REQUIRE_UI_AUDIT=1 python3 Tests/ui_smoke.py` to require those native audits rather than skip when permission is unavailable. The remote preview jobs require this audit in debug and release configurations on both macOS architectures, retaining separate screenshots and logs under `ui-evidence/debug` and `ui-evidence/release`. An unavailable permission fails the required audit; CI must not change privacy settings to force a pass. This is not a manual VoiceOver, system-large-text or live service-approval certification.
 
 The lint script uses fixed, checksum-verified SwiftFormat/SwiftLint releases. SourceKitten otherwise skips the Command Line Tools framework location; the runner supplies its supported toolchain override for that process. No lint rule is disabled for this. Existing size/complexity/style warnings remain distinguishable from errors.
 
@@ -68,11 +70,13 @@ clang -fsyntax-only -Wall -Wextra -Werror \
 For already-built distribution artifacts:
 
 ```sh
-WAKELEASE_COMMUNITY_DIST=<artifact-directory> WAKELEASE_HEADLESS=1 \
-  python3 Tests/package_smoke.py
+WAKELEASE_COMMUNITY_DIST=.build/community-distribution WAKELEASE_REQUIRE_UNIVERSAL_DMG=1 \
+  python3 Tests/package_smoke.py CommunityArtifactSmoke
 ```
 
-This checks all three pkg checksums, expands their contents into a temporary directory, verifies the common worker signature and architecture, checks shell syntax, compares pin records, verifies the app payloads, and checks the DMG checksum. It executes only the worker's read-only `verify` mode—not installer scripts—and never mounts the image.
+This checks all three pkg checksums, expands their contents into a temporary directory, verifies the common worker signature and architecture, checks shell syntax, compares pin records, verifies the app payloads, and checks the DMG checksum. It requires clean release provenance and installer approval metadata. The flag requires a DMG and both architecture slices; when GitHub provides `GITHUB_SHA`, the pin record must match that exact commit. Selecting `CommunityArtifactSmoke` avoids rebuilding a separate development fixture. It executes only the worker's read-only `verify` mode—not installer scripts—and never mounts the image.
+
+The `artifact_roundtrip` CI job performs these checks on another remote Mac after downloading the uploaded artifact. Its pinned download action treats transport digest mismatches as errors. Pre-upload verification alone is not counted as a successful download round trip.
 
 `installed-package-probe.yml` is separately approved **only on disposable GitHub macOS runners**. It uses the actual package builder and native installer scripts but substitutes harmless CLI-only binaries for all app/daemon/helper payloads. It refuses pre-existing product paths/receipts. Its scope is root-owned publication, denied user writes, exact installed identity, rejection while the dummy app is running, interrupted-install repair, delegated deletion and administrator approval-only removal. Cleanup checks the fixture's unique identity. No WakeLease power controller or real service registration is included; consult the exact run before claiming a scenario passed. Installer output uses `-verboseR -dumplog` to retain script diagnostics.
 
@@ -97,6 +101,12 @@ Observed on the Devin Cloud Mac (macOS 26.5.2 VM, standard non-root user):
 
 This matches the product's expectation that helper (daemon) approval requires an administrator, while the user-domain daemon (agent) does not. It does not prove the real WakeLease helper's approved startup, its power cleanup, or behavior on a physical Mac or macOS 15.4.
 
+## Diagnostic cleanup recovery
+
+`python3 Tests/service_approval_safety.py` runs only on disposable CI, with a simulated native-service boundary and real temporary files. Six cases cover failed unregistration and retry, native timeout, missing report, unreadable startup evidence, successful scoped deletion, and a real unprivileged filesystem permission failure.
+
+The approval diagnostic must retain its recovery executable, manifest and evidence until it has a successful cleanup report and readable evidence. A failed unregister or report read must not delete those files from a `finally` block. Directory-removal errors remain visible rather than being ignored. These tests create no launch services and execute no power operation; they test the diagnostic's recovery behavior, not administrator approval itself.
+
 ## Additional offline host and performance checks
 
 ```sh
@@ -109,9 +119,22 @@ The Pi fixture installs the checksum-pinned official `@earendil-works/pi-coding-
 
 The idle check measures only its owned simulation daemon through `proc_pidinfo`, converting Mach ticks with `mach_timebase_info` rather than assuming nanoseconds. It reports CPU/resident memory and catches gross idle loops (>2% CPU) or excessive resident growth (>256 MiB); those regression ceilings are not advertising targets or production-helper measurements.
 
-## Evidence recorded so far
+## Current remote verification matrix
 
-The community-installation changes pass **576 Swift tests in 67 suites** locally in debug and release, plus **28 CLI cases**, **five standalone XPC scenarios across three fresh processes**, **eight offline Pi SDK lifecycle scenarios**, and the read-only community-bundle/distribution checks. The 24 added Swift cases cover installed component trust, package transactions/removal, service-approval error classification and read-only inspection of unset/malformed power preferences. A universal community DMG was built and its three package payloads, worker signatures, checksums and image integrity were inspected without installation.
+The current workflow defines the following checks on both `macos-26` and `macos-15-intel`:
+
+- 576 Swift tests in 67 suites in both debug and release configurations.
+- 28 CLI cases, five anonymous-XPC scenarios across three processes, eight offline Pi SDK scenarios and idle regression checks against both configurations.
+- Five separate-process role/hash XPC cases in debug and release, with positive peer identity and cleanup checks.
+- Six diagnostic cleanup recovery tests using disposable files; the pre-fix run reproduced five failures, including silent filesystem deletion failure.
+- Six native UI test methods per configuration, covering 26 workflow checks and eight previews, with required existing Accessibility permission and no skipped audit.
+- Full unsigned Xcode builds, root-owned ticket checks, development refusal, community bundle verification and universal packaging.
+
+A separate Mac downloads and verifies the uploaded universal installer artifact, and the manually dispatched installer workflow runs the harmless package lifecycle on both architectures. Only completed results for the intended revision count as evidence: [CI runs](https://github.com/ManagementMO/wakelease/actions/workflows/ci.yml) and [installer runs](https://github.com/ManagementMO/wakelease/actions/workflows/installed-package-probe.yml). The older measurements below are historical checkpoints, not a claim that a later commit was tested locally.
+
+## Earlier verification checkpoints
+
+The community-installation changes previously passed **576 Swift tests in 67 suites** in debug and release, plus **28 CLI cases**, **five standalone XPC scenarios across three fresh processes**, **eight offline Pi SDK lifecycle scenarios**, and the read-only community-bundle/distribution checks. The 24 added Swift cases cover installed component trust, package transactions/removal, service-approval error classification and read-only inspection of unset/malformed power preferences. A universal community DMG was built and its three package payloads, worker signatures, checksums and image integrity were inspected without installation.
 
 The native package lifecycle passed on **both architectures** at `b81238a` in [disposable package run 34912512996](https://github.com/ManagementMO/wakelease/actions/runs/34912512996). It verified the actual installer scripts against harmless stand-ins: activation, running-app refusal, interrupted-install repair, exact identity/impostor rejection, root-only writes, delegated deletion and administrator approval-only removal. Both hosts omitted the unset preference from `pmset -g` but exported an explicit live kernel `false`; no power setting was changed. All dummy app/approval files and package receipts created by the test were cleaned up. This is not full product service or physical sleep evidence.
 
@@ -126,7 +149,7 @@ The inherited baseline was **416 tests in 41 suites**. The earlier published CI 
 | Apple Silicon, macOS 26.6.2 (25G83) | Xcode 26.6 / Swift 6.3.3 | Full Xcode app build, Swift/CLI/host fixtures, root-owned ticket fixture, universal development packaging |
 | Intel, macOS 15.7.9 (24G830) | Xcode 26.3 / Swift 6.2.4 | The same build, execution and filesystem checks; not merely cross-compilation |
 
-Locally, the Swift suite also passed in **release configuration**, and the 28 CLI cases, Pi lifecycle fixture and eight native preview cases passed against optimized release executables. The descriptor-alias lock fix passed eight consecutive full parallel-suite runs. To repeat optimized Swift verification, add `--configuration release` to the source-testing command; `WAKELEASE_BIN_DIR` selects the corresponding executables for Python checks.
+Before the remote-only restriction, the Swift suite also passed in **release configuration** on the development machine, and the 28 CLI cases, Pi lifecycle fixture and eight native preview cases passed against optimized release executables. The descriptor-alias lock fix passed eight consecutive full parallel-suite runs. To repeat optimized Swift verification, add `--configuration release` to the source-testing command; `WAKELEASE_BIN_DIR` selects the corresponding executables for Python checks.
 
 Five-second simulation-daemon idle samples (not the production helper, real sensors or UI):
 
@@ -143,7 +166,7 @@ Concurrent CLI latency is load-sensitive and includes process startup and persis
 
 | Gate | Required evidence | Current scope |
 | --- | --- | --- |
-| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `b81238a` and the earlier checkpoints above. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
+| Full Xcode bundle build | Clean unsigned compile of app and embedded products | Passed on both architectures for `fb86978` and the earlier checkpoints above; consult the intended revision's completed CI run. Project format 77 remains readable by Xcode 26.3; deployment/signing settings were not weakened. |
 | Installed XPC authorization | Correct pinned code/role accepted; modified hashes, missing approval and wrong roles rejected; optional Developer ID team checks | Static-code, root-pin, anonymous NSXPC and separate-process Mach-service fixtures covered (positive reply from a different PID; wrong role/hash rejected on both sides). Full installed product peers after administrator/service approval remain unverified |
 | Registration and approval | Fresh install, Gatekeeper/administrator decisions, denial, service approval, login and restart | Harmless disposable probes are separate evidence: dummy agent approval/startup observed on a cloud VM; dummy daemon approval stopped at the administrator password prompt. The actual product was not installed on the development Mac |
 | Community upgrade/repair | Coherent complete-package replacement, inactive services, interrupted installation, wrong-build recovery and rollback | Protected transaction/record tests and read-only package inspection covered; full live product lifecycle remains unverified |
