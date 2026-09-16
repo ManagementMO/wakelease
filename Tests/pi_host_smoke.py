@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = ROOT / ".build/pi-host/node_modules/@earendil-works/pi-coding-agent"
-BIN = Path(os.environ.get("WAKELEASE_BIN_DIR", ROOT / ".build/source-testing/debug"))
+BIN = Path(os.environ.get("WAKELEASE_BIN_DIR", ROOT / ".build/source-testing/debug")).resolve()
 
 
 class PiHostSmoke(unittest.TestCase):
