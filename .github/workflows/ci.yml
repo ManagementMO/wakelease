@@ -52,7 +52,13 @@ jobs:
       - name: Optimized Swift invariants and fake controllers
         env:
           WAKELEASE_SOURCE_TESTING: "1"
-        run: swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts
+          SWIFT_BACKTRACE: enable=yes,interactive=no
+        run: |
+          swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts --filter LeaseBrokerTests
+          for attempt in 1 2 3 4 5; do
+            swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts --skip-build --filter LeaseBrokerTests
+          done
+          swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts --skip-build
       - name: Root-owned removal ticket permissions in a disposable directory
         env:
           WAKELEASE_ROOT_FIXTURE: "1"
@@ -107,6 +113,27 @@ jobs:
         run: python3 Tests/release_tools.py
       - name: Repository and documentation checks
         run: python3 Scripts/check-repository.py
+      - name: Collect only owned Swift test crash reports
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          source = Path.home() / "Library/Logs/DiagnosticReports"
+          destination = Path(".build/test-crash-reports")
+          destination.mkdir(parents=True, exist_ok=True)
+          for pattern in ["swift-testing-helper*.ips", "WakeLeasePackageTests*.ips"]:
+              for report in sorted(source.glob(pattern))[-3:]:
+                  shutil.copy2(report, destination / report.name)
+          PY
+      - name: Retain Swift test crash diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: WakeLease-test-crashes-${{ matrix.runner }}
+          path: .build/test-crash-reports/
+          retention-days: 7
+          if-no-files-found: warn
       - name: Retain universal development archive
         if: matrix.runner == 'macos-26'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
