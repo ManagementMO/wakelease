@@ -35,9 +35,11 @@ struct LeaseBrokerTests {
     func `a new acquire racing final release cannot leave A stale snapshot`() async throws {
         let broker = LeaseBroker()
         _ = try await broker.acquire(LeaseProposal(key: "old"))
-        async let release = broker.release(key: "old")
-        async let acquire = broker.acquire(LeaseProposal(key: "new"))
-        _ = try await (release, acquire)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try await broker.release(key: "old") }
+            group.addTask { _ = try await broker.acquire(LeaseProposal(key: "new")) }
+            try await group.waitForAll()
+        }
         let snapshot = await broker.snapshot()
         #expect(snapshot.leases.map(\.key) == ["new"])
         #expect(snapshot.demand.system)
@@ -48,9 +50,11 @@ struct LeaseBrokerTests {
     @Test
     func `a cutout racing an acquire cannot be bypassed`() async {
         let broker = LeaseBroker()
-        async let acquisition = try? broker.acquire(LeaseProposal(key: "job"))
-        async let hazard: Void = broker.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 100, thermalState: .critical))
-        _ = await (acquisition, hazard)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = try? await broker.acquire(LeaseProposal(key: "job")) }
+            group.addTask { await broker.updateSafety(LeaseSafety(lidClosed: true, temperatureCelsius: 100, thermalState: .critical)) }
+            await group.waitForAll()
+        }
         #expect(await broker.snapshot().demand == .none)
         do {
             _ = try await broker.acquire(LeaseProposal(key: "again"))

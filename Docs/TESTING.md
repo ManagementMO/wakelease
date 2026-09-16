@@ -123,7 +123,7 @@ The idle check measures only its owned simulation daemon through `proc_pidinfo`,
 
 The current workflow defines the following checks on both `macos-26` and `macos-15-intel`:
 
-- 576 Swift tests in 67 suites in both debug and release configurations.
+- 576 Swift tests in 67 suites in both debug and release configurations. The optimized broker suite is also run separately and repeated in five fresh processes before the complete optimized suite.
 - 28 CLI cases, five anonymous-XPC scenarios across three processes, eight offline Pi SDK scenarios and idle regression checks against both configurations.
 - Five separate-process role/hash XPC cases in debug and release, with positive peer identity and cleanup checks.
 - Six diagnostic cleanup recovery tests using disposable files; the pre-fix run reproduced five failures, including silent filesystem deletion failure.
@@ -131,6 +131,8 @@ The current workflow defines the following checks on both `macos-26` and `macos-
 - Full unsigned Xcode builds, root-owned ticket checks, development refusal, community bundle verification and universal packaging.
 
 A separate Mac downloads and verifies the uploaded universal installer artifact, and the manually dispatched installer workflow runs the harmless package lifecycle on both architectures. Only completed results for the intended revision count as evidence: [CI runs](https://github.com/ManagementMO/wakelease/actions/workflows/ci.yml) and [installer runs](https://github.com/ManagementMO/wakelease/actions/workflows/installed-package-probe.yml). The older measurements below are historical checkpoints, not a claim that a later commit was tested locally.
+
+The Intel/Xcode 26.3 optimized run exposed a Swift task-allocator abort (`freed pointer was not the last allocation`) that also reproduced in the isolated broker suite. The two `async let` race fixtures now use concurrent task groups, retaining the same operations and assertions rather than serializing the tests or weakening compiler flags. Test-only failure diagnostics collect only matching Swift test crash reports; toolchain executables are never re-signed for debugging. The production sources contain no `async let` use.
 
 ## Earlier verification checkpoints
 

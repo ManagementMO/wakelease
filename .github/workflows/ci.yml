@@ -52,7 +52,6 @@ jobs:
       - name: Optimized Swift invariants and fake controllers
         env:
           WAKELEASE_SOURCE_TESTING: "1"
-          SWIFT_BACKTRACE: enable=yes,interactive=no
         run: |
           swift test --scratch-path .build/source-testing --configuration release --disable-xctest --disable-experimental-prebuilts --filter LeaseBrokerTests
           for attempt in 1 2 3 4 5; do
